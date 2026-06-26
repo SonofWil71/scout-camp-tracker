@@ -211,6 +211,15 @@
     .sheet-head .sheet-title { margin-bottom: 0; }
     .sheet-close { background: var(--bg); border: none; color: var(--text2); font-size: 15px; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; line-height: 1; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .add-row { display: flex; gap: 10px; }
+
+    /* ── Passphrase gate ──────────────────────── */
+    .gate { position: fixed; inset: 0; z-index: 500; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 24px; }
+    .gate.show { display: flex; }
+    .gate-box { width: 100%; max-width: 340px; text-align: center; }
+    .gate-emoji { font-size: 44px; margin-bottom: 8px; }
+    .gate-title { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .gate-sub { font-size: 14px; color: var(--text2); margin-bottom: 20px; }
+    .gate-err { font-size: 13px; color: var(--red); min-height: 18px; margin: 10px 0; }
     @media (min-width: 600px) { .sheet-panel { max-width: 520px; left: 50%; transform: translateX(-50%); } }
     .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
     .sheet-title  { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 20px; }
@@ -301,6 +310,18 @@
   </style>
 </head>
 <body>
+
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <div class="gate-emoji">🏕️</div>
+    <div class="gate-title">Scout Camp</div>
+    <div class="gate-sub">Enter the family passphrase</div>
+    <input id="gateInput" class="add-input" type="password" placeholder="Passphrase" autocomplete="off"
+           onkeydown="if(event.key==='Enter')submitGate()">
+    <div class="gate-err" id="gateErr"></div>
+    <button class="btn-save" onclick="submitGate()">Unlock</button>
+  </div>
+</div>
 
 <div class="header">
   <div class="header-row">
@@ -553,11 +574,41 @@ function parse(page) {
   };
 }
 
+// ── Passphrase gate ───────────────────────────
+function appKey() { return localStorage.getItem('scoutKey') || ''; }
+function showGate(msg) {
+  document.getElementById('gateErr').textContent = msg || '';
+  document.getElementById('gate').classList.add('show');
+}
+function hideGate() { document.getElementById('gate').classList.remove('show'); }
+function submitGate() {
+  const v = document.getElementById('gateInput').value.trim();
+  if (!v) return;
+  localStorage.setItem('scoutKey', v);
+  document.getElementById('gateInput').value = '';
+  hideGate();
+  loadData();
+}
+
 // ── API ───────────────────────────────────────
+async function apiFetch(path, opts) {
+  opts = opts || {};
+  const res = await fetch(path, Object.assign({}, opts, {
+    headers: Object.assign({ 'x-app-key': appKey() }, opts.headers || {}),
+  }));
+  if (res.status === 401) {
+    localStorage.removeItem('scoutKey');
+    showGate('Wrong passphrase — try again.');
+    throw new Error('unauthorized');
+  }
+  return res;
+}
+
 async function loadData() {
+  if (!appKey()) { showGate(); return; }
   setSyncState('loading');
   try {
-    const res = await fetch('/api/notion');
+    const res = await apiFetch('/api/notion');
     if (!res.ok) throw new Error(res.statusText);
     const pages = await res.json();
     items = pages.map(parse).filter(i => !i.archived);
@@ -565,6 +616,7 @@ async function loadData() {
     setSyncState('ok');
     renderAll();
   } catch(e) {
+    if (e.message === 'unauthorized') return;
     setSyncState('err');
     console.error('Load failed:', e);
     document.getElementById('screen-overview').innerHTML = emptyState('📡', "Can't connect", 'Check your connection or Notion config,<br>then tap ↻ to retry.');
@@ -572,7 +624,7 @@ async function loadData() {
 }
 
 async function patchItem(id, properties) {
-  const res = await fetch('/api/notion', {
+  const res = await apiFetch('/api/notion', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pageId: id, properties }),
@@ -655,10 +707,15 @@ async function handlePhotoCapture(e) {
 }
 
 async function uploadToCloudinary(dataURL) {
+  // Get a short-lived signature from our server (no abusable unsigned preset)
+  const sig = await (await apiFetch('/api/sign')).json();
   const fd = new FormData();
   fd.append('file', dataURL);
-  fd.append('upload_preset', 'Camping_Inventory');
-  const res = await fetch('https://api.cloudinary.com/v1_1/dx11frxfp/image/upload', { method:'POST', body:fd });
+  fd.append('api_key', sig.apiKey);
+  fd.append('timestamp', sig.timestamp);
+  fd.append('signature', sig.signature);
+  fd.append('folder', sig.folder);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloudName}/image/upload`, { method:'POST', body:fd });
   if (!res.ok) throw new Error('Cloudinary ' + res.status);
   return (await res.json()).secure_url;
 }
@@ -812,7 +869,7 @@ function addQtyAdj(d) {
   el.textContent = Math.max(1, parseInt(el.textContent) + d);
 }
 async function createItem(properties) {
-  const res = await fetch('/api/notion', {
+  const res = await apiFetch('/api/notion', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ properties }),

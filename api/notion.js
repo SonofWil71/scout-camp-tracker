@@ -6,9 +6,17 @@ module.exports = async function handler(req, res) {
   // Same-origin app calls are unaffected; this blocks other sites' scripts.
   res.setHeader('Access-Control-Allow-Origin', 'https://scout-camp-tracker.vercel.app');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-app-key');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Passphrase gate: once APP_KEY is set in Vercel env, every request must
+  // carry the matching x-app-key header. Until it's set, the API stays open
+  // (no lock-out during rollout).
+  const APP_KEY = process.env.APP_KEY;
+  if (APP_KEY && req.headers['x-app-key'] !== APP_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   if (!token || !databaseId) {
     return res.status(500).json({ error: 'Missing NOTION_TOKEN or NOTION_DATABASE_ID env vars' });
