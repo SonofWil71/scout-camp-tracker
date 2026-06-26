@@ -1,5 +1,5 @@
-const CACHE = 'scout-camp-v1';
-const STATIC = ['/', '/index.html', '/manifest.json', '/icon.svg'];
+const CACHE = 'scout-camp-v2';
+const STATIC = ['/', '/index.html', '/manifest.json', '/icon.svg', '/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC)));
