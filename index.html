@@ -205,7 +205,11 @@
     .sheet-overlay { position: fixed; inset: 0; z-index: 200; display: none; }
     .sheet-overlay.open { display: block; }
     .sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
-    .sheet-panel { position: absolute; bottom: 0; left: 0; right: 0; background: var(--card); border-radius: 18px 18px 0 0; padding: 12px 20px calc(env(safe-area-inset-bottom) + 24px); }
+    .sheet-panel { position: absolute; bottom: 0; left: 0; right: 0; background: var(--card); border-radius: 18px 18px 0 0; padding: 12px 20px calc(env(safe-area-inset-bottom) + 24px); max-height: 90dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; position: sticky; top: 0; background: var(--card); z-index: 1; }
+    .sheet-head .sheet-title { margin-bottom: 0; }
+    .sheet-close { background: var(--bg); border: none; color: var(--text2); font-size: 15px; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; line-height: 1; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .add-row { display: flex; gap: 10px; }
     @media (min-width: 600px) { .sheet-panel { max-width: 520px; left: 50%; transform: translateX(-50%); } }
     .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
     .sheet-title  { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 20px; }
@@ -350,8 +354,11 @@
 <div class="sheet-overlay" id="addSheet">
   <div class="sheet-backdrop" onclick="closeAddSheet()"></div>
   <div class="sheet-panel">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">Add item</div>
+    <div class="sheet-handle" onclick="closeAddSheet()"></div>
+    <div class="sheet-head">
+      <div class="sheet-title" id="addTitle">Add item</div>
+      <button class="sheet-close" onclick="closeAddSheet()" aria-label="Close">✕</button>
+    </div>
     <div class="add-field">
       <div class="sheet-label">Item name</div>
       <input class="add-input" id="addName" placeholder="e.g. Spare socks" autocomplete="off">
@@ -373,32 +380,32 @@
       <div class="sheet-label">Tags</div>
       <div class="tag-chips" id="addTags"></div>
     </div>
-    <div id="addFoodFields" style="display:none">
-      <div class="add-field">
-        <div class="sheet-label">Day</div>
-        <select class="add-input" id="addDay">
-          <option>Day 1</option><option>Day 2</option><option>Day 3</option><option>All Days</option>
-        </select>
-      </div>
-      <div class="add-field">
-        <div class="sheet-label">Meal</div>
-        <select class="add-input" id="addMeal">
-          <option>Breakfast</option><option>Morning Tea</option><option>Lunch</option>
-          <option>Afternoon Tea</option><option>Dinner</option><option>Snack</option>
-        </select>
+    <div id="addFoodTop" style="display:none">
+      <div class="add-row">
+        <div class="add-field" style="flex:1">
+          <div class="sheet-label">Day</div>
+          <select class="add-input" id="addDay">
+            <option>Day 1</option><option>Day 2</option><option>Day 3</option><option>All Days</option>
+          </select>
+        </div>
+        <div class="add-field" style="flex:1">
+          <div class="sheet-label">Meal</div>
+          <select class="add-input" id="addMeal">
+            <option>Breakfast</option><option>Morning Tea</option><option>Lunch</option>
+            <option>Afternoon Tea</option><option>Dinner</option><option>Snack</option>
+          </select>
+        </div>
       </div>
       <div class="add-field">
         <div class="sheet-label">Prep</div>
         <div class="tag-chips" id="addPrep"></div>
       </div>
-      <div class="add-field">
-        <div class="sheet-label">Verdict (rate after the trip)</div>
-        <select class="add-input" id="addVerdict">
-          <option value="">—</option><option>Favourite</option><option>Do again</option><option>Not again</option>
-        </select>
-      </div>
     </div>
-    <div class="add-field">
+    <div class="add-field" id="addContentsWrap">
+      <div class="sheet-label" id="addContentsLabel">Contents / ingredients (kit or meal)</div>
+      <input class="add-input" id="addContents" placeholder="e.g. rice bubbles, milk powder, dried banana" autocomplete="off">
+    </div>
+    <div class="add-field" id="addQtyWrap">
       <div class="sheet-label">Qty needed</div>
       <div class="qty-row">
         <button class="qty-btn" onclick="addQtyAdj(-1)">−</button>
@@ -406,17 +413,19 @@
         <button class="qty-btn" onclick="addQtyAdj(1)">+</button>
       </div>
     </div>
-    <div class="add-field toggle-row">
+    <div class="add-field toggle-row" id="addNIWrap">
       <div class="sheet-label" style="margin:0">Name inscribed on item</div>
       <input type="checkbox" id="addNI">
     </div>
-    <div class="add-field">
+    <div class="add-field" id="addNotesWrap">
       <div class="sheet-label">Notes (colour / detail)</div>
       <input class="add-input" id="addNotes" placeholder="optional" autocomplete="off">
     </div>
-    <div class="add-field">
-      <div class="sheet-label">Contents / ingredients (kit or meal)</div>
-      <input class="add-input" id="addContents" placeholder="e.g. rice bubbles, milk powder, dried banana" autocomplete="off">
+    <div class="add-field" id="addVerdictWrap" style="display:none">
+      <div class="sheet-label">Verdict (rate after the trip)</div>
+      <select class="add-input" id="addVerdict">
+        <option value="">—</option><option>Favourite</option><option>Do again</option><option>Not again</option>
+      </select>
     </div>
     <button class="btn-save" id="addSaveBtn" onclick="submitAddItem()">Add to list</button>
   </div>
@@ -425,8 +434,11 @@
 <div class="sheet-overlay" id="editSheet">
   <div class="sheet-backdrop" onclick="closeSheet()"></div>
   <div class="sheet-panel">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title" id="sheetTitle"></div>
+    <div class="sheet-handle" onclick="closeSheet()"></div>
+    <div class="sheet-head">
+      <div class="sheet-title" id="sheetTitle"></div>
+      <button class="sheet-close" onclick="closeSheet()" aria-label="Close">✕</button>
+    </div>
     <div class="sheet-field">
       <div class="sheet-label">Status</div>
       <select class="sheet-select" id="sheetStatus">
@@ -749,7 +761,15 @@ function renderAddPrep() {
 function toggleAddPrep(p) { addPrepSel.has(p) ? addPrepSel.delete(p) : addPrepSel.add(p); renderAddPrep(); }
 function toggleFoodFields() {
   const isFood = document.getElementById('addCat').value === 'Food';
-  document.getElementById('addFoodFields').style.display = isFood ? 'block' : 'none';
+  document.getElementById('addFoodTop').style.display     = isFood ? 'block' : 'none';
+  document.getElementById('addVerdictWrap').style.display = isFood ? 'block' : 'none';
+  document.getElementById('addNIWrap').style.display      = isFood ? 'none'  : 'flex';
+  document.getElementById('addNotesWrap').style.display   = isFood ? 'none'  : 'block';
+  document.getElementById('addContentsLabel').textContent = isFood ? 'Ingredients' : 'Contents (kit / set)';
+  document.getElementById('addContents').placeholder      = isFood
+    ? 'e.g. rice bubbles, milk powder, dried banana'
+    : 'e.g. plate, bowl, cup, cutlery';
+  document.getElementById('addTitle').textContent         = isFood ? 'Add meal' : 'Add item';
 }
 function addQtyAdj(d) {
   const el = document.getElementById('addQty');
