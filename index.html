@@ -384,6 +384,7 @@ function prop(page, name) {
   if (p.type === 'select')    return p.select?.name ?? null;
   if (p.type === 'checkbox')  return p.checkbox ?? false;
   if (p.type === 'number')    return p.number ?? null;
+  if (p.type === 'url')       return p.url ?? null;
   return null;
 }
 
@@ -401,6 +402,7 @@ function parse(page) {
     qtyPacked:  prop(page, 'Qty Packed') ?? 0,
     notes:      prop(page, 'Notes') || '',
     archived:   prop(page, 'Archived') || false,
+    photoUrl:   prop(page, 'Photo URL') || '',
   };
 }
 
@@ -495,6 +497,23 @@ async function handlePhotoCapture(e) {
   await photoPut(id, dataURL);
   renderAll();
   if (editingId === id) refreshSheetPhoto();
+  try {
+    const cloudUrl = await uploadToCloudinary(dataURL);
+    await patchItem(id, { 'Photo URL': { url: cloudUrl } });
+    const item = items.find(i => i.id === id);
+    if (item) item.photoUrl = cloudUrl;
+  } catch(err) {
+    console.error('Cloud photo sync failed:', err);
+  }
+}
+
+async function uploadToCloudinary(dataURL) {
+  const fd = new FormData();
+  fd.append('file', dataURL);
+  fd.append('upload_preset', 'Camping_Inventory');
+  const res = await fetch('https://api.cloudinary.com/v1_1/dx11frxfp/image/upload', { method:'POST', body:fd });
+  if (!res.ok) throw new Error('Cloudinary ' + res.status);
+  return (await res.json()).secure_url;
 }
 function resizeImage(file, maxDim) {
   return new Promise(res => {
@@ -511,7 +530,9 @@ function resizeImage(file, maxDim) {
   });
 }
 function openPhotoModal(id) {
-  const p = photoCache[id]; if (!p) return;
+  const item = items.find(i => i.id === id);
+  const p = (item && item.photoUrl) || photoCache[id];
+  if (!p) return;
   document.getElementById('photoModalImg').src = p;
   document.getElementById('photoModal').classList.add('open');
 }
@@ -521,12 +542,16 @@ function closePhotoModal() {
 async function removePhoto(id) {
   delete photoCache[id];
   await photoDel(id);
+  const item = items.find(i => i.id === id);
+  if (item) item.photoUrl = '';
   renderAll();
   if (editingId === id) refreshSheetPhoto();
+  try { await patchItem(id, { 'Photo URL': { url: null } }); } catch(e) {}
 }
 function refreshSheetPhoto() {
   if (!editingId) return;
-  const p    = photoCache[editingId];
+  const item = items.find(i => i.id === editingId);
+  const p    = (item && item.photoUrl) || photoCache[editingId];
   const area = document.getElementById('sheetPhotoArea');
   area.innerHTML = p
     ? `<img class="sheet-photo-prev" src="${p}" alt="" onclick="openPhotoModal('${editingId}')"><button class="sheet-cam-btn" onclick="takePhoto('${editingId}')">Retake</button><button class="sheet-cam-del" onclick="removePhoto('${editingId}')">Delete</button>`
@@ -593,7 +618,7 @@ function itemCard(item) {
     <div class="item-name">${esc(item.name)}</div>
     ${meta?`<div class="item-meta">${meta}</div>`:''}
   </div>
-  <div class="item-right">${catBadge(item.category)}${statusBadge(item.status)}${photoCache[item.id]?`<img class="item-thumb" src="${photoCache[item.id]}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Take photo">📷</button>`}</div>
+  <div class="item-right">${catBadge(item.category)}${statusBadge(item.status)}${(item.photoUrl||photoCache[item.id])?`<img class="item-thumb" src="${item.photoUrl||photoCache[item.id]}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Take photo">📷</button>`}</div>
 </div>`;
 }
 
