@@ -381,7 +381,18 @@
       <div class="add-field">
         <div class="sheet-label">Meal</div>
         <select class="add-input" id="addMeal">
-          <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option>
+          <option>Breakfast</option><option>Morning Tea</option><option>Lunch</option>
+          <option>Afternoon Tea</option><option>Dinner</option><option>Snack</option>
+        </select>
+      </div>
+      <div class="add-field">
+        <div class="sheet-label">Prep</div>
+        <div class="tag-chips" id="addPrep"></div>
+      </div>
+      <div class="add-field">
+        <div class="sheet-label">Verdict (rate after the trip)</div>
+        <select class="add-input" id="addVerdict">
+          <option value="">—</option><option>Favourite</option><option>Do again</option><option>Not again</option>
         </select>
       </div>
     </div>
@@ -402,8 +413,8 @@
       <input class="add-input" id="addNotes" placeholder="optional" autocomplete="off">
     </div>
     <div class="add-field">
-      <div class="sheet-label">Contents (for a kit / set)</div>
-      <input class="add-input" id="addContents" placeholder="e.g. plate, bowl, cup, cutlery" autocomplete="off">
+      <div class="sheet-label">Contents / ingredients (kit or meal)</div>
+      <input class="add-input" id="addContents" placeholder="e.g. rice bubbles, milk powder, dried banana" autocomplete="off">
     </div>
     <button class="btn-save" id="addSaveBtn" onclick="submitAddItem()">Add to list</button>
   </div>
@@ -440,6 +451,29 @@
       <div class="sheet-label">Notes</div>
       <div class="sheet-note" id="sheetNotes"></div>
     </div>
+    <div class="sheet-field" id="sheetContentsWrap" style="display:none">
+      <div class="sheet-label">Contents / ingredients</div>
+      <div class="sheet-note" id="sheetContents"></div>
+    </div>
+    <div class="sheet-field" id="sheetPrepWrap" style="display:none">
+      <div class="sheet-label">Prep</div>
+      <div class="sheet-note" id="sheetPrep"></div>
+    </div>
+    <div class="sheet-field" id="sheetVerdictWrap" style="display:none">
+      <div class="sheet-label">Verdict</div>
+      <select class="sheet-select" id="sheetVerdict">
+        <option value="">—</option><option>Favourite</option><option>Do again</option><option>Not again</option>
+      </select>
+    </div>
+    <div class="sheet-field" id="sheetDupWrap" style="display:none">
+      <div class="sheet-label">Duplicate this meal to another day</div>
+      <div class="qty-row">
+        <select class="sheet-select" id="sheetDupDay" style="flex:1">
+          <option>Day 1</option><option>Day 2</option><option>Day 3</option><option>All Days</option>
+        </select>
+        <button class="sheet-cam-btn" onclick="duplicateMeal()">Copy</button>
+      </div>
+    </div>
     <div class="sheet-field">
       <div class="sheet-label">Photo</div>
       <div class="sheet-photo-area" id="sheetPhotoArea"></div>
@@ -472,6 +506,7 @@ function prop(page, name) {
   if (p.type === 'checkbox')  return p.checkbox ?? false;
   if (p.type === 'number')    return p.number ?? null;
   if (p.type === 'url')       return p.url ?? null;
+  if (p.type === 'multi_select') return p.multi_select.map(o => o.name);
   return null;
 }
 
@@ -490,6 +525,11 @@ function parse(page) {
     notes:      prop(page, 'Notes') || '',
     archived:   prop(page, 'Archived') || false,
     photoUrl:   prop(page, 'Photo URL') || '',
+    contents:   prop(page, 'Contents') || '',
+    nameInscribed: prop(page, 'Name Inscribed') || false,
+    verdict:    prop(page, 'Verdict') || '',
+    prep:       prop(page, 'Prep') || [],
+    tags:       prop(page, 'Tags') || [],
   };
 }
 
@@ -669,6 +709,7 @@ function switchTab(tab) {
 // ── Add item ──────────────────────────────────
 const TAG_OPTIONS = ['SR', 'JAM', 'ALL', '1Oak', 'Patrol'];
 let addTagsSel = new Set();
+let addPrepSel = new Set();
 
 function openAddSheet(ctx) {
   document.getElementById('addName').value = '';
@@ -676,14 +717,17 @@ function openAddSheet(ctx) {
   document.getElementById('addContents').value = '';
   document.getElementById('addNI').checked = false;
   document.getElementById('addQty').textContent = '1';
+  document.getElementById('addVerdict').value = '';
   addTagsSel = new Set(['SR']);
+  addPrepSel = new Set();
   const cat = document.getElementById('addCat');
   const who = document.getElementById('addWho');
-  if (ctx === 'menu')      { cat.value = 'Food';  who.value = 'Shared'; }
+  if (ctx === 'menu')      { cat.value = 'Food';  who.value = 'Shared'; addPrepSel = new Set(['Pre-packed']); }
   else if (ctx === 'gear') { cat.value = 'Gear';  who.value = 'Shared'; }
   else                     { cat.value = 'Clothing'; who.value = (packPerson !== 'All') ? packPerson : 'Mia'; }
   if (ctx === 'menu') document.getElementById('addDay').value = activeDay;
   renderAddTags();
+  renderAddPrep();
   toggleFoodFields();
   document.getElementById('addSheet').classList.add('open');
 }
@@ -694,6 +738,12 @@ function renderAddTags() {
     .join('');
 }
 function toggleAddTag(t) { addTagsSel.has(t) ? addTagsSel.delete(t) : addTagsSel.add(t); renderAddTags(); }
+function renderAddPrep() {
+  document.getElementById('addPrep').innerHTML = PREP_OPTIONS
+    .map(p => `<div class="tag-chip${addPrepSel.has(p) ? ' on' : ''}" onclick="toggleAddPrep('${p}')">${p}</div>`)
+    .join('');
+}
+function toggleAddPrep(p) { addPrepSel.has(p) ? addPrepSel.delete(p) : addPrepSel.add(p); renderAddPrep(); }
 function toggleFoodFields() {
   const isFood = document.getElementById('addCat').value === 'Food';
   document.getElementById('addFoodFields').style.display = isFood ? 'block' : 'none';
@@ -731,6 +781,9 @@ async function submitAddItem() {
   if (cat === 'Food') {
     properties['Day']  = { select: { name: document.getElementById('addDay').value } };
     properties['Meal'] = { select: { name: document.getElementById('addMeal').value } };
+    properties['Prep'] = { multi_select: [...addPrepSel].map(p => ({ name: p })) };
+    const verdict = document.getElementById('addVerdict').value;
+    if (verdict) properties['Verdict'] = { select: { name: verdict } };
   }
   const btn = document.getElementById('addSaveBtn');
   btn.textContent = 'Adding…'; btn.disabled = true;
@@ -770,6 +823,27 @@ function catBadge(c) {
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Meal helpers ──────────────────────────────
+const MEALS = ['Breakfast', 'Morning Tea', 'Lunch', 'Afternoon Tea', 'Dinner', 'Snack'];
+const PREP_OPTIONS = ['Pre-packed', 'Add water', 'Heat'];
+const VERDICT_ICON = { 'Favourite': '⭐', 'Do again': '🔁', 'Not again': '✋' };
+function verdictBadge(v) {
+  return v ? `<span class="badge b-purple">${VERDICT_ICON[v] || ''} ${v}</span>` : '';
+}
+function mealCard(item) {
+  const photo = item.photoUrl || photoCache[item.id];
+  const ing   = item.contents ? `<div class="item-meta">${esc(item.contents)}</div>` : '';
+  const prep  = (item.prep && item.prep.length) ? `<div class="item-meta">🍴 ${item.prep.map(esc).join(' · ')}</div>` : '';
+  return `<div class="item-card" onclick="openSheetById('${item.id}')">
+  <button class="status-btn ${dotClass(item.status)}" onclick="event.stopPropagation();cycleStatus('${item.id}')" title="Tap to change status"></button>
+  <div class="item-info">
+    <div class="item-name">${esc(item.name)}</div>
+    ${ing}${prep}
+  </div>
+  <div class="item-right">${verdictBadge(item.verdict)}${statusBadge(item.status)}${photo?`<img class="item-thumb" src="${photo}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Add photo">📷</button>`}</div>
+</div>`;
 }
 
 // ── Item card ─────────────────────────────────
@@ -881,8 +955,8 @@ ${otherMissing ? `<div class="section-title">Other missing</div>${otherMissing}`
 // ── Render: Packing ───────────────────────────
 function renderPacking() {
   const el   = document.getElementById('screen-packing');
-  const cats = ['All','Clothing','Gear','Safety','Activity'];
-  let pool   = items.filter(i=>i.category!=='Food');
+  const cats = ['All','Clothing','Gear','Safety','Food','Activity'];
+  let pool   = items.slice();
   if (packCat!=='All') pool = pool.filter(i=>i.category===packCat);
 
   let content;
@@ -912,13 +986,12 @@ ${content}
 function renderMenu() {
   const el    = document.getElementById('screen-menu');
   const days  = ['Day 1','Day 2','Day 3'];
-  const meals = ['Breakfast','Lunch','Dinner','Snack'];
   const dayFood = items.filter(i=>i.category==='Food'&&(i.day===activeDay||i.day==='All Days'));
 
-  const menuContent = meals.map(m=>{
+  const menuContent = MEALS.map(m=>{
     const arr = dayFood.filter(i=>i.meal===m);
-    return arr.length ? `<div class="section-title">${m}</div>` + arr.map(itemCard).join('') : '';
-  }).join('') || emptyState('🍽️','No meals planned',`Add Food items for ${activeDay} in Notion.`);
+    return arr.length ? `<div class="section-title">${m}</div>` + arr.map(mealCard).join('') : '';
+  }).join('') || emptyState('🍽️','No meals planned',`Tap + to add a meal for ${activeDay}.`);
 
   el.innerHTML = `
 <div class="filter-row">
@@ -988,8 +1061,44 @@ function openSheetById(id) {
   document.getElementById('sheetNotes').textContent = item.notes;
   document.getElementById('sheetNotesWrap').style.display = item.notes ? 'block' : 'none';
 
+  document.getElementById('sheetContents').textContent = item.contents;
+  document.getElementById('sheetContentsWrap').style.display = item.contents ? 'block' : 'none';
+
+  const isFood = item.category === 'Food';
+  document.getElementById('sheetPrep').textContent = (item.prep && item.prep.length) ? item.prep.join(' · ') : '';
+  document.getElementById('sheetPrepWrap').style.display = (isFood && item.prep && item.prep.length) ? 'block' : 'none';
+  document.getElementById('sheetVerdict').value = item.verdict || '';
+  document.getElementById('sheetVerdictWrap').style.display = isFood ? 'block' : 'none';
+  document.getElementById('sheetDupWrap').style.display = isFood ? 'block' : 'none';
+
   document.getElementById('editSheet').classList.add('open');
   refreshSheetPhoto();
+}
+
+async function duplicateMeal() {
+  const item = items.find(i => i.id === editingId);
+  if (!item) return;
+  const day = document.getElementById('sheetDupDay').value;
+  const properties = {
+    'Item Name':   { title: [{ text: { content: item.name } }] },
+    'Category':    { select: { name: 'Food' } },
+    'Assigned To': { select: { name: item.assignedTo } },
+    'Status':      { select: { name: 'Not Started' } },
+    'Day':         { select: { name: day } },
+    'Tags':        { multi_select: (item.tags || []).map(t => ({ name: t })) },
+    'Prep':        { multi_select: (item.prep || []).map(p => ({ name: p })) },
+  };
+  if (item.meal)     properties['Meal']     = { select: { name: item.meal } };
+  if (item.contents) properties['Contents'] = { rich_text: [{ text: { content: item.contents } }] };
+  if (item.notes)    properties['Notes']    = { rich_text: [{ text: { content: item.notes } }] };
+  try {
+    await createItem(properties);
+    closeSheet();
+    await loadData();
+  } catch (e) {
+    console.error('Duplicate failed', e);
+    alert('Could not duplicate — check your connection.');
+  }
 }
 
 function closeSheet() {
@@ -1012,13 +1121,19 @@ async function saveSheet() {
   const qtyPacked = parseInt(document.getElementById('sheetQtyVal').textContent)||0;
   item.status    = status;
   item.qtyPacked = qtyPacked;
+  const payload = {
+    'Status':     { select: { name: status } },
+    'Qty Packed': { number: qtyPacked },
+  };
+  if (item.category === 'Food') {
+    const verdict = document.getElementById('sheetVerdict').value;
+    item.verdict = verdict;
+    payload['Verdict'] = verdict ? { select: { name: verdict } } : { select: null };
+  }
   closeSheet();
   renderAll();
   try {
-    await patchItem(editingId, {
-      'Status':     { select: { name: status } },
-      'Qty Packed': { number: qtyPacked },
-    });
+    await patchItem(editingId, payload);
   } catch(e) { console.error('Save failed',e); }
 }
 
