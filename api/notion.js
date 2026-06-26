@@ -2,9 +2,12 @@ module.exports = async function handler(req, res) {
   const token = process.env.NOTION_TOKEN;
   const databaseId = process.env.NOTION_DATABASE_ID;
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Restrict cross-origin browser access to the app's own origin (was '*').
+  // Same-origin app calls are unaffected; this blocks other sites' scripts.
+  res.setHeader('Access-Control-Allow-Origin', 'https://scout-camp-tracker.vercel.app');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (!token || !databaseId) {
