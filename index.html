@@ -341,7 +341,7 @@
   <button class="photo-modal-close" onclick="event.stopPropagation();closePhotoModal()">✕</button>
   <img class="photo-modal-img" id="photoModalImg" src="" alt="Item photo">
 </div>
-<input type="file" accept="image/*" capture="environment" id="cameraInput" style="display:none">
+<input type="file" accept="image/*" id="cameraInput" style="display:none">
 
 <button class="add-fab" id="addFab" onclick="openAddSheet(currentTab)" title="Add item">+</button>
 
@@ -641,8 +641,8 @@ function refreshSheetPhoto() {
   const p    = (item && item.photoUrl) || photoCache[editingId];
   const area = document.getElementById('sheetPhotoArea');
   area.innerHTML = p
-    ? `<img class="sheet-photo-prev" src="${p}" alt="" onclick="openPhotoModal('${editingId}')"><button class="sheet-cam-btn" onclick="takePhoto('${editingId}')">Retake</button><button class="sheet-cam-del" onclick="removePhoto('${editingId}')">Delete</button>`
-    : `<button class="sheet-cam-btn" onclick="takePhoto('${editingId}')">📷 Take photo</button>`;
+    ? `<img class="sheet-photo-prev" src="${p}" alt="" onclick="openPhotoModal('${editingId}')"><button class="sheet-cam-btn" onclick="takePhoto('${editingId}')">Change</button><button class="sheet-cam-del" onclick="removePhoto('${editingId}')">Delete</button>`
+    : `<button class="sheet-cam-btn" onclick="takePhoto('${editingId}')">📷 Add photo</button>`;
 }
 
 // ── Sync indicator ────────────────────────────
@@ -786,7 +786,7 @@ function itemCard(item) {
     <div class="item-name">${esc(item.name)}</div>
     ${meta?`<div class="item-meta">${meta}</div>`:''}
   </div>
-  <div class="item-right">${catBadge(item.category)}${statusBadge(item.status)}${(item.photoUrl||photoCache[item.id])?`<img class="item-thumb" src="${item.photoUrl||photoCache[item.id]}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Take photo">📷</button>`}</div>
+  <div class="item-right">${catBadge(item.category)}${statusBadge(item.status)}${(item.photoUrl||photoCache[item.id])?`<img class="item-thumb" src="${item.photoUrl||photoCache[item.id]}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Add photo">📷</button>`}</div>
 </div>`;
 }
 
@@ -1044,6 +1044,16 @@ if ('serviceWorker' in navigator) {
   });
 }
 document.getElementById('cameraInput').addEventListener('change', handlePhotoCapture);
+
+// Refresh from Notion whenever the app regains focus, so photos and status
+// changes made on one device appear on the others without a manual tap.
+let _lastSync = Date.now();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Date.now() - _lastSync > 4000) {
+    _lastSync = Date.now();
+    loadData();
+  }
+});
 </script>
 </body>
 </html>
