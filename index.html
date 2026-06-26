@@ -175,6 +175,8 @@
     .filter-row::-webkit-scrollbar { display: none; }
     .pill { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; background: var(--card); color: var(--text2); border: 0.5px solid var(--border); user-select: none; }
     .pill.active { background: var(--camp); color: #fff; border-color: var(--camp); }
+    .pill.tag.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .filter-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; align-self: center; margin-right: 2px; flex-shrink: 0; }
 
     /* ── Alert banner ────────────────────────── */
     .alert-banner {
@@ -489,6 +491,7 @@ let currentTab   = 'overview';
 let packPerson   = 'All';
 let packCat      = 'All';
 let gearCat      = 'All';
+let activeTag    = 'SR';
 let activeDay    = 'Day 1';
 let editingId    = null;
 let pendingPhotoId   = null;
@@ -857,7 +860,7 @@ function itemCard(item) {
   return `<div class="item-card${crit?' critical':''}" onclick="openSheetById('${item.id}')">
   <button class="status-btn ${dotClass(item.status)}" onclick="event.stopPropagation();cycleStatus('${item.id}')" title="Tap to change status"></button>
   <div class="item-info">
-    <div class="item-name">${esc(item.name)}</div>
+    <div class="item-name">${esc(item.name)}${item.nameInscribed?' <span title="Name inscribed">✒️</span>':''}</div>
     ${meta?`<div class="item-meta">${meta}</div>`:''}
   </div>
   <div class="item-right">${catBadge(item.category)}${statusBadge(item.status)}${(item.photoUrl||photoCache[item.id])?`<img class="item-thumb" src="${item.photoUrl||photoCache[item.id]}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Add photo">📷</button>`}</div>
@@ -882,11 +885,12 @@ function renderOverview() {
     return;
   }
 
-  const total   = items.length;
-  const doneN   = items.filter(i => i.status==='Packed'||i.status==='Confirmed').length;
-  const pct     = Math.round(doneN/total*100);
-  const missing = items.filter(i => i.status==='Missing');
-  const critical= items.filter(i => i.category==='Safety'&&(i.status==='Not Started'||i.status==='Missing'));
+  const view    = items.filter(matchTag);
+  const total   = view.length;
+  const doneN   = view.filter(i => i.status==='Packed'||i.status==='Confirmed').length;
+  const pct     = total ? Math.round(doneN/total*100) : 0;
+  const missing = view.filter(i => i.status==='Missing');
+  const critical= view.filter(i => i.category==='Safety'&&(i.status==='Not Started'||i.status==='Missing'));
 
   function pStats(arr) {
     const n = arr.length, done = arr.filter(i=>i.status==='Packed'||i.status==='Confirmed').length;
@@ -894,9 +898,9 @@ function renderOverview() {
     return { n, done, p: n?Math.round(done/n*100):0, kg:(kg/1000).toFixed(1) };
   }
 
-  const mS  = pStats(items.filter(i=>i.assignedTo==='Mia'));
-  const aS  = pStats(items.filter(i=>i.assignedTo==='Ava'));
-  const shS = pStats(items.filter(i=>i.assignedTo==='Shared'));
+  const mS  = pStats(view.filter(i=>i.assignedTo==='Mia'));
+  const aS  = pStats(view.filter(i=>i.assignedTo==='Ava'));
+  const shS = pStats(view.filter(i=>i.assignedTo==='Shared'));
   const bar = p => p>=100?'bar-green':p>=60?'bar-orange':'bar-red';
 
   function personCard(initials, label, avCls, st) {
@@ -923,6 +927,7 @@ function renderOverview() {
 </div>`).join('');
 
   el.innerHTML = `
+${tagFilterRow()}
 <div class="stat-grid">
   <div class="stat-card">
     <div class="stat-num ${pct<50?'alert':pct<80?'warn':'good'}">${pct}%</div>
@@ -956,7 +961,7 @@ ${otherMissing ? `<div class="section-title">Other missing</div>${otherMissing}`
 function renderPacking() {
   const el   = document.getElementById('screen-packing');
   const cats = ['All','Clothing','Gear','Safety','Food','Activity'];
-  let pool   = items.slice();
+  let pool   = items.filter(matchTag);
   if (packCat!=='All') pool = pool.filter(i=>i.category===packCat);
 
   let content;
@@ -972,6 +977,7 @@ function renderPacking() {
   }
 
   el.innerHTML = `
+${tagFilterRow()}
 <div class="filter-row">
   ${['All','Mia','Ava','Shared'].map(p=>`<div class="pill${packPerson===p?' active':''}" onclick="setPackPerson('${p}')">${p}</div>`).join('')}
 </div>
@@ -986,7 +992,7 @@ ${content}
 function renderMenu() {
   const el    = document.getElementById('screen-menu');
   const days  = ['Day 1','Day 2','Day 3'];
-  const dayFood = items.filter(i=>i.category==='Food'&&(i.day===activeDay||i.day==='All Days'));
+  const dayFood = items.filter(i=>i.category==='Food'&&matchTag(i)&&(i.day===activeDay||i.day==='All Days'));
 
   const menuContent = MEALS.map(m=>{
     const arr = dayFood.filter(i=>i.meal===m);
@@ -994,6 +1000,7 @@ function renderMenu() {
   }).join('') || emptyState('🍽️','No meals planned',`Tap + to add a meal for ${activeDay}.`);
 
   el.innerHTML = `
+${tagFilterRow()}
 <div class="filter-row">
   ${days.map(d=>`<div class="pill${activeDay===d?' active':''}" onclick="setDay('${d}')">${d}</div>`).join('')}
 </div>
@@ -1005,16 +1012,32 @@ ${menuContent}
 function renderGear() {
   const el   = document.getElementById('screen-gear');
   const cats = ['All','Gear','Safety','Activity'];
-  let pool   = items.filter(i=>i.assignedTo==='Shared');
+  let pool   = items.filter(i=>i.assignedTo==='Shared' && matchTag(i));
   if (gearCat!=='All') pool = pool.filter(i=>i.category===gearCat);
 
   el.innerHTML = `
+${tagFilterRow()}
 <div class="filter-row">
   ${cats.map(c=>`<div class="pill${gearCat===c?' active':''}" onclick="setGearCat('${c}')">${c}</div>`).join('')}
 </div>
 ${pool.length ? pool.map(itemCard).join('') : emptyState('⛺','No shared gear','Add Shared items in Notion.')}
 <div style="height:8px"></div>`;
 }
+
+// ── Tag filter ────────────────────────────────
+const TAG_FILTERS = ['SR', 'JAM', '1Oak', 'Patrol', 'Everything'];
+function matchTag(item) {
+  if (activeTag === 'Everything') return true;
+  const t = item.tags || [];
+  if (activeTag === 'SR' || activeTag === 'JAM') return t.includes(activeTag) || t.includes('ALL');
+  return t.includes(activeTag);
+}
+function tagFilterRow() {
+  return `<div class="filter-row"><span class="filter-label">Camp</span>${TAG_FILTERS
+    .map(t => `<div class="pill tag${activeTag===t?' active':''}" onclick="setTag('${t}')">${t}</div>`)
+    .join('')}</div>`;
+}
+function setTag(t) { activeTag = t; renderAll(); }
 
 // ── Filter setters ────────────────────────────
 function setPackPerson(p) { packPerson=p; renderPacking(); }
@@ -1052,6 +1075,8 @@ function openSheetById(id) {
 
   const metaParts = [];
   if (item.assignedTo) metaParts.push('Assigned: ' + item.assignedTo);
+  if (item.tags && item.tags.length) metaParts.push('🏷 ' + item.tags.join(', '));
+  if (item.nameInscribed) metaParts.push('✒️ Name inscribed');
   if (item.weight > 0) metaParts.push('Weight: ' + item.weight + 'g');
   if (item.day)        metaParts.push('Day: ' + item.day);
   if (item.meal)       metaParts.push('Meal: ' + item.meal);
