@@ -52,7 +52,7 @@ Full PWA scaffold — identical pattern to filament-tracker.
 
 1. **Lightweight sleeping solution** — sleeping bags and mattresses flagged as car-camping weight. Need to source lightweight mummy bags (<1kg) and ultralight sleeping pads (<300g) for both girls for the hike-in State Rally.
 
-2. **icon-512.png** — export `icon.svg` to 512×512 PNG, drop in project root. Required for iOS PWA home screen install. Use any SVG→PNG converter (e.g. squoosh.app).
+2. ~~**icon-512.png**~~ — ✅ DONE. Generated opaque 512×512 PNG via macOS `qlmanage`, wired apple-touch-icon to it, cached in sw.js (v2). Deployed.
 
 3. **Camp filter in app** — `index.html` currently has no Camp field filter. Future enhancement: add Camp selector to filter views by "State Rally 2026" / "Jamborette" / "All Camps".
 
