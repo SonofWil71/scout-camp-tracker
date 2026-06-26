@@ -400,6 +400,10 @@
         <div class="sheet-label">Prep</div>
         <div class="tag-chips" id="addPrep"></div>
       </div>
+      <div class="add-field">
+        <div class="sheet-label">Add ingredients (tap a staple)</div>
+        <div class="tag-chips" id="addIngredients"></div>
+      </div>
     </div>
     <div class="add-field" id="addContentsWrap">
       <div class="sheet-label" id="addContentsLabel">Contents / ingredients (kit or meal)</div>
@@ -725,6 +729,8 @@ function switchTab(tab) {
 const TAG_OPTIONS = ['SR', 'JAM', 'ALL', '1Oak', 'Patrol'];
 let addTagsSel = new Set();
 let addPrepSel = new Set();
+let addIngrSel = new Set();
+let _staples   = [];
 
 function openAddSheet(ctx) {
   document.getElementById('addName').value = '';
@@ -735,16 +741,45 @@ function openAddSheet(ctx) {
   document.getElementById('addVerdict').value = '';
   addTagsSel = new Set(['SR']);
   addPrepSel = new Set();
+  addIngrSel = new Set();
   const cat = document.getElementById('addCat');
   const who = document.getElementById('addWho');
-  if (ctx === 'menu')      { cat.value = 'Food';  who.value = 'Shared'; addPrepSel = new Set(['Pre-packed']); }
+  if (ctx === 'menu')      { cat.value = 'Food';  who.value = (packPerson !== 'All' && packPerson) ? packPerson : 'Mia'; addPrepSel = new Set(['Pre-packed']); }
   else if (ctx === 'gear') { cat.value = 'Gear';  who.value = 'Shared'; }
   else                     { cat.value = 'Clothing'; who.value = (packPerson !== 'All') ? packPerson : 'Mia'; }
   if (ctx === 'menu') document.getElementById('addDay').value = activeDay;
   renderAddTags();
   renderAddPrep();
+  renderIngredientChips();
   toggleFoodFields();
   document.getElementById('addSheet').classList.add('open');
+}
+
+// Unique food-staple names (strip the "(1)" per-girl suffix), as an ingredient palette
+function uniqueStaples() {
+  const set = new Set();
+  items.filter(i => i.category === 'Food').forEach(i => {
+    const base = (i.name || '').replace(/\s*\(\d+\)\s*$/, '').trim();
+    if (base) set.add(base);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+function renderIngredientChips() {
+  _staples = uniqueStaples();
+  const el = document.getElementById('addIngredients');
+  if (!_staples.length) {
+    el.innerHTML = '<span style="font-size:12px;color:var(--text3)">No saved staples yet — type ingredients below.</span>';
+    return;
+  }
+  el.innerHTML = _staples
+    .map((s, i) => `<div class="tag-chip${addIngrSel.has(s) ? ' on' : ''}" onclick="toggleIngredient(${i})">${esc(s)}</div>`)
+    .join('');
+}
+function toggleIngredient(i) {
+  const s = _staples[i];
+  if (s === undefined) return;
+  addIngrSel.has(s) ? addIngrSel.delete(s) : addIngrSel.add(s);
+  renderIngredientChips();
 }
 function closeAddSheet() { document.getElementById('addSheet').classList.remove('open'); }
 function renderAddTags() {
@@ -765,9 +800,9 @@ function toggleFoodFields() {
   document.getElementById('addVerdictWrap').style.display = isFood ? 'block' : 'none';
   document.getElementById('addNIWrap').style.display      = isFood ? 'none'  : 'flex';
   document.getElementById('addNotesWrap').style.display   = isFood ? 'none'  : 'block';
-  document.getElementById('addContentsLabel').textContent = isFood ? 'Ingredients' : 'Contents (kit / set)';
+  document.getElementById('addContentsLabel').textContent = isFood ? 'Other ingredients (free text)' : 'Contents (kit / set)';
   document.getElementById('addContents').placeholder      = isFood
-    ? 'e.g. rice bubbles, milk powder, dried banana'
+    ? 'anything not in the staples above'
     : 'e.g. plate, bowl, cup, cutlery';
   document.getElementById('addTitle').textContent         = isFood ? 'Add meal' : 'Add item';
 }
@@ -797,8 +832,12 @@ async function submitAddItem() {
     'Tags':        { multi_select: [...addTagsSel].map(t => ({ name: t })) },
     'Name Inscribed': { checkbox: document.getElementById('addNI').checked },
   };
-  const notes    = document.getElementById('addNotes').value.trim();
-  const contents = document.getElementById('addContents').value.trim();
+  const notes  = document.getElementById('addNotes').value.trim();
+  let contents = document.getElementById('addContents').value.trim();
+  if (cat === 'Food') {
+    const extra = contents ? contents.split(',').map(s => s.trim()).filter(Boolean) : [];
+    contents = [...addIngrSel, ...extra].join(', ');
+  }
   if (notes)    properties['Notes']    = { rich_text: [{ text: { content: notes } }] };
   if (contents) properties['Contents'] = { rich_text: [{ text: { content: contents } }] };
   if (cat === 'Food') {
