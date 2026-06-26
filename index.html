@@ -864,7 +864,17 @@ function renderAll() {
 
 // ── Init ──────────────────────────────────────
 loadData();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  // When a new service worker takes control, reload once so every device
+  // picks up the latest app HTML instead of a stale cached copy.
+  let _swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_swRefreshing) return;
+    _swRefreshing = true;
+    location.reload();
+  });
+}
 document.getElementById('cameraInput').addEventListener('change', handlePhotoCapture);
 </script>
 </body>
