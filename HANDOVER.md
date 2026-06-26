@@ -54,7 +54,15 @@ Full PWA scaffold — identical pattern to filament-tracker.
 
 2. ~~**icon-512.png**~~ — ✅ DONE. Generated opaque 512×512 PNG via macOS `qlmanage`, wired apple-touch-icon to it, cached in sw.js (v2). Deployed.
 
-3. **Camp filter in app** — `index.html` currently has no Camp field filter. Future enhancement: add Camp selector to filter views by "State Rally 2026" / "Jamborette" / "All Camps".
+3. **Photo cloud sync** — Cloudinary account ready. Next session implementation:
+   - Add `Photo URL` (text) property to Notion DB
+   - Update app: on photo capture, upload to Cloudinary → save URL via PATCH to Notion → display from URL on all devices
+   - Current IndexedDB local photos become the fallback cache
+   - **Cloudinary credentials (safe to store — unsigned preset, no secret needed):**
+     - Cloud name: `dx11frxfp`
+     - Upload preset: `Camping_Inventory` (unsigned, folder: scout-camp)
+
+4. **Camp filter in app** — `index.html` currently has no Camp field filter. Future enhancement: add Camp selector to filter views by "State Rally 2026" / "Jamborette" / "All Camps".
 
 4. **End-to-end test** — open https://scout-camp-tracker.vercel.app on iPhone/iPad, verify items load from Notion and status taps save back.
 
