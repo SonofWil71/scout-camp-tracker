@@ -300,6 +300,31 @@
     .toggle-row { display: flex; align-items: center; justify-content: space-between; }
     .toggle-row input { width: 22px; height: 22px; accent-color: var(--camp); }
 
+    /* ── Report buttons ───────────────────────── */
+    .report-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .report-btn { padding: 8px 14px; border-radius: 10px; border: 0.5px solid var(--border); background: var(--card); color: var(--camp); font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; }
+
+    /* ── Printable report (PDF via browser print) ── */
+    #printArea { display: none; }
+    @media print {
+      body > *:not(#printArea) { display: none !important; }
+      #printArea { display: block !important; color: #000; font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 0; }
+      .pr-h1 { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
+      .pr-meta { font-size: 12px; color: #555; margin-bottom: 14px; }
+      .pr-stats { font-size: 13px; margin: 0 0 16px; padding: 10px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+      .pr-sec { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin: 18px 0 6px; }
+      .pr-sec.alert { color: #b00; }
+      .pr-item { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-bottom: 0.5px solid #ccc; break-inside: avoid; }
+      .pr-thumb { width: 46px; height: 46px; object-fit: cover; border: 0.5px solid #999; border-radius: 4px; flex-shrink: 0; }
+      .pr-noimg { width: 46px; height: 46px; border: 0.5px dashed #bbb; border-radius: 4px; flex-shrink: 0; }
+      .pr-name { font-size: 14px; font-weight: 600; }
+      .pr-sub { font-size: 12px; color: #444; }
+      .pr-cat { font-size: 11px; color: #777; }
+      .pr-info { flex: 1; }
+      .pr-status { font-size: 11px; font-weight: 700; white-space: nowrap; }
+      .pr-foot { margin-top: 20px; font-size: 11px; color: #777; border-top: 0.5px solid #ccc; padding-top: 8px; }
+    }
+
     /* ── Desktop tweaks ──────────────────────── */
     @media (min-width: 600px) {
       .content { max-width: 520px; margin: 0 auto; }
@@ -521,6 +546,8 @@
     <button class="btn-save" onclick="saveSheet()">Save</button>
   </div>
 </div>
+
+<div id="printArea"></div>
 
 <script>
 // ── State ─────────────────────────────────────
@@ -1069,6 +1096,12 @@ ${personCard('M','Mia','av-mia',mS)}
 ${personCard('A','Ava','av-ava',aS)}
 <div class="section-title">Shared Gear</div>
 ${personCard('⛺','Shared','av-shared',shS)}
+<div class="section-title">Packing record (save as PDF)</div>
+<div class="report-row">
+  <button class="report-btn" onclick="exportReport('Mia')">📄 Mia</button>
+  <button class="report-btn" onclick="exportReport('Ava')">📄 Ava</button>
+  <button class="report-btn" onclick="exportReport('Everyone')">📄 Everyone</button>
+</div>
 ${critBanners ? `<div class="section-title" style="color:var(--red)">⚠️ Critical unpacked</div>${critBanners}` : ''}
 ${otherMissing ? `<div class="section-title">Other missing</div>${otherMissing}` : ''}
 <div style="height:8px"></div>`;
@@ -1277,6 +1310,44 @@ async function saveSheet() {
   try {
     await patchItem(editingId, payload);
   } catch(e) { console.error('Save failed',e); }
+}
+
+// ── Packing record (print → PDF) ──────────────
+function exportReport(person) {
+  const camp = activeTag === 'Everything' ? 'All camps' : activeTag;
+  let view = items.filter(matchTag);
+  if (person !== 'Everyone') view = view.filter(i => i.assignedTo === person);
+  const now = new Date().toLocaleString('en-AU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  const packed  = view.filter(i => i.status === 'Packed' || i.status === 'Confirmed');
+  const missing = view.filter(i => i.status === 'Missing');
+  const todo    = view.filter(i => i.status === 'Not Started');
+  const kg = (view.reduce((s,i) => s + (i.weight||0)*(i.qtyNeeded||1), 0) / 1000).toFixed(1);
+
+  const prItem = i => {
+    const photo = i.photoUrl || photoCache[i.id] || '';
+    const qty = i.qtyNeeded > 1 ? ` · ${i.qtyPacked}/${i.qtyNeeded}` : '';
+    return `<div class="pr-item">
+      ${photo ? `<img class="pr-thumb" src="${photo}" alt="">` : '<div class="pr-noimg"></div>'}
+      <div class="pr-info">
+        <div class="pr-name">${esc(i.name)}${i.nameInscribed ? ' &#9999;' : ''}</div>
+        ${i.contents ? `<div class="pr-sub">${esc(i.contents)}</div>` : ''}
+        <div class="pr-cat">${esc(i.assignedTo)} · ${esc(i.category)}${qty}</div>
+      </div>
+      <div class="pr-status">${esc(i.status)}</div>
+    </div>`;
+  };
+  const sec = (label, arr, alert) => arr.length
+    ? `<div class="pr-sec${alert ? ' alert' : ''}">${label} (${arr.length})</div>${arr.map(prItem).join('')}` : '';
+
+  document.getElementById('printArea').innerHTML = `
+    <div class="pr-h1">${person === 'Everyone' ? 'Mia &amp; Ava' : esc(person)} — packing record</div>
+    <div class="pr-meta">${camp} · generated ${now}</div>
+    <div class="pr-stats">Packed: ${packed.length} of ${view.length} &nbsp;·&nbsp; Not packed: ${todo.length} &nbsp;·&nbsp; Missing: ${missing.length} &nbsp;·&nbsp; Approx weight: ${kg} kg</div>
+    ${sec('Packed &amp; confirmed', packed)}
+    ${sec('Missing', missing, true)}
+    ${sec('Not yet packed', todo)}
+    <div class="pr-foot">Scout Camp Tracker — record of items carried, for safety / risk purposes. Photos shown where available.</div>`;
+  window.print();
 }
 
 // ── Render all ────────────────────────────────
