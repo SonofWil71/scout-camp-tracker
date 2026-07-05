@@ -66,6 +66,13 @@
     .sync-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.4s; }
     #syncLabel { font-size: 12px; color: var(--text2); }
     .refresh-btn { background: none; border: none; cursor: pointer; padding: 4px; color: var(--text2); font-size: 16px; line-height: 1; }
+    .pending-badge { display: none; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: #A05A00; background: rgba(255,149,0,0.14); border: 0.5px solid rgba(255,149,0,0.3); padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+
+    /* ── Toast (sync feedback) ────────────────── */
+    .toast { position: fixed; left: 50%; transform: translateX(-50%) translateY(20px); bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 16px); z-index: 350; max-width: 88%; padding: 10px 16px; border-radius: 12px; font-size: 13px; font-weight: 500; color: #fff; background: #1C1C1E; box-shadow: 0 4px 16px rgba(0,0,0,0.3); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; text-align: center; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.warn { background: #A05A00; }
+    .toast.err  { background: #C0001A; }
 
     /* ── Status dot colours ──────────────────── */
     .dot-green  { background: var(--green); }
@@ -291,6 +298,16 @@
       display: none; align-items: center; justify-content: center;
     }
     .add-fab.show { display: flex; }
+    .report-fab {
+      position: fixed; left: 18px; z-index: 90;
+      bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 22px);
+      padding: 8px 13px; border-radius: 22px;
+      background: var(--card); color: var(--text2); border: 0.5px solid var(--border);
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .report-fab:active { opacity: 0.7; }
     .add-field { margin-bottom: 14px; }
     .add-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 0.5px solid var(--border); background: var(--bg); color: var(--text); font-size: 15px; font-family: inherit; -webkit-appearance: none; appearance: none; }
     .add-input:focus { outline: none; border-color: var(--camp); }
@@ -331,6 +348,7 @@
       .tab-bar { max-width: 520px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
       .header  { max-width: 520px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
       .add-fab { right: calc(50% - 260px + 18px); }
+      .report-fab { left: calc(50% - 260px + 18px); }
     }
   </style>
 </head>
@@ -352,6 +370,7 @@
   <div class="header-row">
     <h1>🏕️ Scout Camp</h1>
     <div class="sync-area">
+      <span class="pending-badge" id="pendingBadge" onclick="flushQueue()" title="Tap to sync now"></span>
       <div class="sync-dot dot-orange" id="syncDot"></div>
       <span id="syncLabel">Loading…</span>
       <button class="refresh-btn" onclick="loadData()" title="Refresh">↻</button>
@@ -397,11 +416,30 @@
 <input type="file" accept="image/*" id="cameraInput" style="display:none">
 
 <button class="add-fab" id="addFab" onclick="openAddSheet(currentTab)" title="Add item">+</button>
+<button class="report-fab" id="reportFab" onclick="openReportSheet()" title="Report a problem">🐞 Report</button>
+
+<div class="sheet-overlay" id="reportSheet">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div class="sheet-title">Report a problem</div>
+      <button class="sheet-close" onclick="closeReportSheet()" aria-label="Close">✕</button>
+    </div>
+    <div class="add-field">
+      <div class="sheet-label">What went wrong?</div>
+      <textarea class="add-input" id="reportText" style="min-height:90px;resize:vertical" placeholder="e.g. I tapped Save and the photo disappeared"></textarea>
+    </div>
+    <div class="sheet-note" id="reportContext" style="margin-bottom:14px"></div>
+    <button class="btn-save" onclick="sendReport()">Send report</button>
+    <div class="sheet-note" style="margin-top:10px">This opens your mail / share sheet with the details, addressed to Dad. Add a screenshot if you have one.</div>
+  </div>
+</div>
 
 <div class="sheet-overlay" id="addSheet">
-  <div class="sheet-backdrop" onclick="closeAddSheet()"></div>
+  <div class="sheet-backdrop"></div>
   <div class="sheet-panel">
-    <div class="sheet-handle" onclick="closeAddSheet()"></div>
+    <div class="sheet-handle"></div>
     <div class="sheet-head">
       <div class="sheet-title" id="addTitle">Add item</div>
       <button class="sheet-close" onclick="closeAddSheet()" aria-label="Close">✕</button>
@@ -483,12 +521,16 @@
 </div>
 
 <div class="sheet-overlay" id="editSheet">
-  <div class="sheet-backdrop" onclick="closeSheet()"></div>
+  <div class="sheet-backdrop"></div>
   <div class="sheet-panel">
-    <div class="sheet-handle" onclick="closeSheet()"></div>
+    <div class="sheet-handle"></div>
     <div class="sheet-head">
       <div class="sheet-title" id="sheetTitle"></div>
       <button class="sheet-close" onclick="closeSheet()" aria-label="Close">✕</button>
+    </div>
+    <div class="sheet-field">
+      <div class="sheet-label">Item name</div>
+      <input class="add-input" id="sheetName" autocomplete="off">
     </div>
     <div class="sheet-field">
       <div class="sheet-label">Status</div>
@@ -512,13 +554,13 @@
       <div class="sheet-label">Details</div>
       <div class="sheet-note" id="sheetMeta"></div>
     </div>
-    <div class="sheet-field" id="sheetNotesWrap" style="display:none">
+    <div class="sheet-field" id="sheetNotesWrap">
       <div class="sheet-label">Notes</div>
-      <div class="sheet-note" id="sheetNotes"></div>
+      <input class="add-input" id="sheetNotes" placeholder="optional" autocomplete="off">
     </div>
-    <div class="sheet-field" id="sheetContentsWrap" style="display:none">
+    <div class="sheet-field" id="sheetContentsWrap">
       <div class="sheet-label">Contents / ingredients</div>
-      <div class="sheet-note" id="sheetContents"></div>
+      <input class="add-input" id="sheetContents" placeholder="optional" autocomplete="off">
     </div>
     <div class="sheet-field" id="sheetPrepWrap" style="display:none">
       <div class="sheet-label">Prep</div>
@@ -544,6 +586,7 @@
       <div class="sheet-photo-area" id="sheetPhotoArea"></div>
     </div>
     <button class="btn-save" onclick="saveSheet()">Save</button>
+    <button class="sheet-cam-del" style="width:100%;margin-top:10px" onclick="archiveItem()">Archive item (remove from list)</button>
   </div>
 </div>
 
@@ -553,16 +596,19 @@
 // ── State ─────────────────────────────────────
 let items        = [];
 let currentTab   = 'overview';
-let packPerson   = 'All';
-let packCat      = 'All';
-let gearCat      = 'All';
-let activeTag    = 'SR';
-let activeDay    = 'Day 1';
+// Filters persist per device so the app reopens where you left it.
+const lsGet = (k, def) => { try { return localStorage.getItem(k) ?? def; } catch(e){ return def; } };
+let packPerson   = lsGet('f_person', 'All');
+let packCat      = lsGet('f_cat', 'All');
+let gearCat      = lsGet('f_gearcat', 'All');
+let activeTag    = lsGet('f_tag', 'SR');
+let activeDay    = lsGet('f_day', 'Day 1');
 let editingId    = null;
 let pendingPhotoId   = null;
 let photoCache       = {};
 let photoCacheLoaded = false;
 let _photoDB         = null;
+const APP_VERSION    = 'v4-s03';
 
 // ── Notion property extractor ─────────────────
 function prop(page, name) {
@@ -642,6 +688,8 @@ async function loadData() {
     if (!photoCacheLoaded) await preloadPhotos();
     setSyncState('ok');
     renderAll();
+    updatePendingBadge();
+    flushQueue();          // we're online — push anything queued while offline
   } catch(e) {
     if (e.message === 'unauthorized') return;
     setSyncState('err');
@@ -650,14 +698,78 @@ async function loadData() {
   }
 }
 
-async function patchItem(id, properties) {
+// ── Sync feedback + offline write queue ───────
+// Edits/status/photo writes never fail silently: they either reach Notion or
+// are queued on the device and flushed automatically when signal returns.
+// (Creating new items still needs a live connection — done at home, not at camp.)
+function toast(msg, kind) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.className = 'toast show' + (kind ? ' ' + kind : '');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.className = 'toast' + (kind ? ' ' + kind : ''); }, 2600);
+}
+function queueGet()  { try { return JSON.parse(localStorage.getItem('pendingWrites') || '[]'); } catch(e) { return []; } }
+function queueSave(a){ try { localStorage.setItem('pendingWrites', JSON.stringify(a)); } catch(e){} updatePendingBadge(); }
+function queueAdd(op){ const a = queueGet(); a.push(op); queueSave(a); }
+function updatePendingBadge() {
+  const el = document.getElementById('pendingBadge');
+  if (!el) return;
+  const n = queueGet().length;
+  el.textContent = n ? ('⚠︎ ' + n + ' unsynced') : '';
+  el.style.display = n ? 'inline-flex' : 'none';
+}
+
+// Raw network PATCH. Returns true if it reached Notion; false on network/API
+// failure; throws only on 401 (apiFetch has already shown the gate).
+async function pushPatch(pageId, properties) {
   const res = await apiFetch('/api/notion', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pageId: id, properties }),
+    body: JSON.stringify({ pageId, properties }),
   });
-  if (!res.ok) throw new Error('Save failed: ' + res.status);
-  return res.json();
+  return res.ok;
+}
+// Save an edit: try the network, else queue on device. Always tells the user.
+async function savePatch(pageId, properties, label, quiet) {
+  try {
+    if (await pushPatch(pageId, properties)) { if (!quiet) toast((label || 'Saved') + ' ✓'); return true; }
+  } catch(e) { if (e.message === 'unauthorized') return false; }
+  queueAdd({ kind: 'patch', pageId, properties });
+  toast('Saved on device — will sync when online', 'warn');
+  return false;
+}
+// Re-upload a queued photo, then patch its URL. Returns true when synced.
+async function flushPhoto(itemId) {
+  const dataURL = photoCache[itemId] || await photoGet(itemId);
+  if (!dataURL) return true;                       // photo was deleted — drop the op
+  const cloudUrl = await uploadToCloudinary(dataURL);
+  const ok = await pushPatch(itemId, { 'Photo URL': { url: cloudUrl } });
+  if (ok) { const it = items.find(i => i.id === itemId); if (it) it.photoUrl = cloudUrl; }
+  return ok;
+}
+let _flushing = false;
+async function flushQueue() {
+  if (_flushing || !appKey()) return;
+  const a = queueGet();
+  if (!a.length) return;
+  _flushing = true;
+  const remaining = [];
+  let authFail = false;
+  for (const op of a) {
+    if (authFail) { remaining.push(op); continue; }
+    try {
+      const ok = op.kind === 'photo' ? await flushPhoto(op.itemId) : await pushPatch(op.pageId, op.properties);
+      if (!ok) remaining.push(op);
+    } catch(e) {
+      remaining.push(op);
+      if (e.message === 'unauthorized') authFail = true;
+    }
+  }
+  queueSave(remaining);
+  _flushing = false;
+  if (!remaining.length && !authFail) { toast('All changes synced ✓'); renderAll(); }
 }
 
 // ── Photo storage (IndexedDB) ─────────────────
@@ -725,11 +837,14 @@ async function handlePhotoCapture(e) {
   if (editingId === id) refreshSheetPhoto();
   try {
     const cloudUrl = await uploadToCloudinary(dataURL);
-    await patchItem(id, { 'Photo URL': { url: cloudUrl } });
+    const ok = await pushPatch(id, { 'Photo URL': { url: cloudUrl } });
     const item = items.find(i => i.id === id);
-    if (item) item.photoUrl = cloudUrl;
+    if (ok) { if (item) item.photoUrl = cloudUrl; }
+    else { queueAdd({ kind: 'photo', itemId: id }); toast('Photo saved on device — will sync', 'warn'); }
   } catch(err) {
-    console.error('Cloud photo sync failed:', err);
+    if (err.message === 'unauthorized') return;
+    queueAdd({ kind: 'photo', itemId: id });
+    toast('Photo saved on device — will sync', 'warn');
   }
 }
 
@@ -771,13 +886,14 @@ function closePhotoModal() {
   document.getElementById('photoModal').classList.remove('open');
 }
 async function removePhoto(id) {
+  if (!confirm('Delete this photo? You can only get it back by retaking it.')) return;
   delete photoCache[id];
   await photoDel(id);
   const item = items.find(i => i.id === id);
   if (item) item.photoUrl = '';
   renderAll();
   if (editingId === id) refreshSheetPhoto();
-  try { await patchItem(id, { 'Photo URL': { url: null } }); } catch(e) {}
+  savePatch(id, { 'Photo URL': { url: null } }, 'Photo removed');
 }
 function refreshSheetPhoto() {
   if (!editingId) return;
@@ -866,7 +982,13 @@ function toggleIngredient(i) {
   addIngrSel.has(s) ? addIngrSel.delete(s) : addIngrSel.add(s);
   renderIngredientChips();
 }
-function closeAddSheet() { document.getElementById('addSheet').classList.remove('open'); }
+function closeAddSheet() {
+  // Only ✕ or "Add to list" close the sheet now (backdrop/handle/keyboard-dismiss do not).
+  // If anything's been typed, confirm before discarding.
+  const dirty = ['addName','addNotes','addContents'].some(id => (document.getElementById(id).value || '').trim());
+  if (dirty && !confirm('Discard this item? Your typing will be lost.')) return;
+  document.getElementById('addSheet').classList.remove('open');
+}
 function renderAddTags() {
   document.getElementById('addTags').innerHTML = TAG_OPTIONS
     .map(t => `<div class="tag-chip${addTagsSel.has(t) ? ' on' : ''}" onclick="toggleAddTag('${t}')">${t}</div>`)
@@ -1102,6 +1224,12 @@ ${personCard('⛺','Shared','av-shared',shS)}
   <button class="report-btn" onclick="exportReport('Ava')">📄 Ava</button>
   <button class="report-btn" onclick="exportReport('Everyone')">📄 Everyone</button>
 </div>
+<div class="section-title">Start a fresh pack (${activeTag})</div>
+<div class="report-row">
+  <button class="report-btn" onclick="resetPacking('Mia')">↺ Reset Mia</button>
+  <button class="report-btn" onclick="resetPacking('Ava')">↺ Reset Ava</button>
+  <button class="report-btn" onclick="resetPacking('Everyone')">↺ Reset all</button>
+</div>
 ${critBanners ? `<div class="section-title" style="color:var(--red)">⚠️ Critical unpacked</div>${critBanners}` : ''}
 ${otherMissing ? `<div class="section-title">Other missing</div>${otherMissing}` : ''}
 <div style="height:8px"></div>`;
@@ -1170,7 +1298,7 @@ ${tagFilterRow()}
 <div class="filter-row">
   ${cats.map(c=>`<div class="pill${gearCat===c?' active':''}" onclick="setGearCat('${c}')">${c}</div>`).join('')}
 </div>
-${pool.length ? pool.map(itemCard).join('') : emptyState('⛺','No shared gear','Add Shared items in Notion.')}
+${pool.length ? pool.map(itemCard).join('') : emptyState('⛺','No shared gear','Tap + to add shared gear for the patrol.')}
 <div style="height:8px"></div>`;
 }
 
@@ -1187,13 +1315,14 @@ function tagFilterRow() {
     .map(t => `<div class="pill tag${activeTag===t?' active':''}" onclick="setTag('${t}')">${t}</div>`)
     .join('')}</div>`;
 }
-function setTag(t) { activeTag = t; renderAll(); }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
+function setTag(t) { activeTag = t; lsSet('f_tag', t); renderAll(); }
 
 // ── Filter setters ────────────────────────────
-function setPackPerson(p) { packPerson=p; renderPacking(); }
-function setPackCat(c)    { packCat=c;    renderPacking(); }
-function setGearCat(c)    { gearCat=c;    renderGear(); }
-function setDay(d)        { activeDay=d;  renderMenu(); }
+function setPackPerson(p) { packPerson=p; lsSet('f_person', p);  renderPacking(); }
+function setPackCat(c)    { packCat=c;    lsSet('f_cat', c);     renderPacking(); }
+function setGearCat(c)    { gearCat=c;    lsSet('f_gearcat', c); renderGear(); }
+function setDay(d)        { activeDay=d;  lsSet('f_day', d);     renderMenu(); }
 
 // ── Cycle status (tap dot) ────────────────────
 async function cycleStatus(id) {
@@ -1203,8 +1332,7 @@ async function cycleStatus(id) {
   const next = CYCLE[idx<0?1:(idx+1)%CYCLE.length];
   item.status = next;
   renderAll();
-  try { await patchItem(id,{'Status':{select:{name:next}}}); }
-  catch(e) { console.error('Cycle failed',e); }
+  savePatch(id, { 'Status': { select: { name: next } } }, 'Status', true);
 }
 
 // ── Bottom sheet ──────────────────────────────
@@ -1214,6 +1342,7 @@ function openSheetById(id) {
   editingId = id;
 
   document.getElementById('sheetTitle').textContent = item.name;
+  document.getElementById('sheetName').value = item.name;
   document.getElementById('sheetStatus').value = item.status;
 
   const needsQty = item.qtyNeeded > 1;
@@ -1233,11 +1362,11 @@ function openSheetById(id) {
   document.getElementById('sheetMeta').textContent = metaParts.join(' · ');
   document.getElementById('sheetMetaWrap').style.display = metaParts.length ? 'block' : 'none';
 
-  document.getElementById('sheetNotes').textContent = item.notes;
-  document.getElementById('sheetNotesWrap').style.display = item.notes ? 'block' : 'none';
+  document.getElementById('sheetNotes').value = item.notes || '';
 
-  document.getElementById('sheetContents').textContent = item.contents;
-  document.getElementById('sheetContentsWrap').style.display = item.contents ? 'block' : 'none';
+  document.getElementById('sheetContents').value = item.contents || '';
+  const contLabel = item.category === 'Food' ? 'Ingredients' : 'Contents (kit / set)';
+  document.querySelector('#sheetContentsWrap .sheet-label').textContent = contLabel;
 
   const isFood = item.category === 'Food';
   document.getElementById('sheetPrep').textContent = (item.prep && item.prep.length) ? item.prep.join(' · ') : '';
@@ -1281,6 +1410,16 @@ function closeSheet() {
   editingId = null;
 }
 
+async function archiveItem() {
+  if (!editingId) return;
+  const id = editingId;
+  if (!confirm('Archive this item? It leaves the packing list but stays in Notion and can be restored there.')) return;
+  items = items.filter(i => i.id !== id);
+  closeSheet();
+  renderAll();
+  savePatch(id, { 'Archived': { checkbox: true } }, 'Archived');
+}
+
 function adjustQty(delta) {
   const item = items.find(i=>i.id===editingId);
   const max  = item ? (item.qtyNeeded||1) : 99;
@@ -1292,14 +1431,25 @@ async function saveSheet() {
   if (!editingId) return;
   const item = items.find(i=>i.id===editingId);
   if (!item) return;
+  const id        = editingId;
+  const name      = document.getElementById('sheetName').value.trim();
+  const notes     = document.getElementById('sheetNotes').value.trim();
+  const contents  = document.getElementById('sheetContents').value.trim();
   const status    = document.getElementById('sheetStatus').value;
   const qtyPacked = parseInt(document.getElementById('sheetQtyVal').textContent)||0;
+  // Update the on-screen model first (optimistic), then persist.
+  if (name) item.name = name;
+  item.notes     = notes;
+  item.contents  = contents;
   item.status    = status;
   item.qtyPacked = qtyPacked;
   const payload = {
     'Status':     { select: { name: status } },
     'Qty Packed': { number: qtyPacked },
+    'Notes':      { rich_text: notes    ? [{ text: { content: notes } }]    : [] },
+    'Contents':   { rich_text: contents ? [{ text: { content: contents } }] : [] },
   };
+  if (name) payload['Item Name'] = { title: [{ text: { content: name } }] };
   if (item.category === 'Food') {
     const verdict = document.getElementById('sheetVerdict').value;
     item.verdict = verdict;
@@ -1307,9 +1457,7 @@ async function saveSheet() {
   }
   closeSheet();
   renderAll();
-  try {
-    await patchItem(editingId, payload);
-  } catch(e) { console.error('Save failed',e); }
+  savePatch(id, payload, 'Saved');
 }
 
 // ── Packing record (print → PDF) ──────────────
@@ -1320,8 +1468,9 @@ function exportReport(person) {
   const now = new Date().toLocaleString('en-AU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
   const packed  = view.filter(i => i.status === 'Packed' || i.status === 'Confirmed');
   const missing = view.filter(i => i.status === 'Missing');
-  const todo    = view.filter(i => i.status === 'Not Started');
-  const kg = (view.reduce((s,i) => s + (i.weight||0)*(i.qtyNeeded||1), 0) / 1000).toFixed(1);
+  // Record shows only what is actually packed; weight reflects packed items.
+  // Missing is retained as a safety flag (items known to be absent).
+  const kg = (packed.reduce((s,i) => s + (i.weight||0)*(i.qtyNeeded||1), 0) / 1000).toFixed(1);
 
   const prItem = i => {
     const photo = i.photoUrl || photoCache[i.id] || '';
@@ -1342,12 +1491,82 @@ function exportReport(person) {
   document.getElementById('printArea').innerHTML = `
     <div class="pr-h1">${person === 'Everyone' ? 'Mia &amp; Ava' : esc(person)} — packing record</div>
     <div class="pr-meta">${camp} · generated ${now}</div>
-    <div class="pr-stats">Packed: ${packed.length} of ${view.length} &nbsp;·&nbsp; Not packed: ${todo.length} &nbsp;·&nbsp; Missing: ${missing.length} &nbsp;·&nbsp; Approx weight: ${kg} kg</div>
+    <div class="pr-stats">Packed: ${packed.length} of ${view.length} &nbsp;·&nbsp; Missing: ${missing.length} &nbsp;·&nbsp; Approx weight packed: ${kg} kg</div>
     ${sec('Packed &amp; confirmed', packed)}
     ${sec('Missing', missing, true)}
-    ${sec('Not yet packed', todo)}
-    <div class="pr-foot">Scout Camp Tracker — record of items carried, for safety / risk purposes. Photos shown where available.</div>`;
+    <div class="pr-foot">Scout Camp Tracker — record of items actually packed, for safety / risk purposes. Photos shown where available.</div>`;
   window.print();
+}
+
+// ── Bug report (R4) ───────────────────────────
+// Captures where the user was + app state, then hands off via the native share
+// sheet (or mail) to Dad. Upgrade path: POST to an api/report.js → Notion "Bug
+// reports" DB once that DB + a scoped connection exist (needs Vercel/Notion setup).
+const REPORT_TO = 'wilso1971@gmail.com';
+function captureContext() {
+  const item = editingId ? (items.find(i => i.id === editingId) || null) : null;
+  return {
+    tab: currentTab, camp: activeTag, day: activeDay,
+    packPerson, packCat, gearCat,
+    openItem: item ? item.name : null,
+    pending: queueGet().length, items: items.length,
+    version: APP_VERSION, when: new Date().toISOString(),
+    ua: navigator.userAgent, viewport: innerWidth + 'x' + innerHeight,
+  };
+}
+function openReportSheet() {
+  document.getElementById('reportText').value = '';
+  const c = captureContext();
+  document.getElementById('reportContext').innerHTML =
+    'Auto-attached: tab <b>' + esc(c.tab) + '</b> · camp ' + esc(c.camp) +
+    (c.openItem ? ' · item “' + esc(c.openItem) + '”' : '') +
+    ' · ' + c.pending + ' unsynced · ' + esc(c.version);
+  document.getElementById('reportSheet').classList.add('open');
+}
+function closeReportSheet() { document.getElementById('reportSheet').classList.remove('open'); }
+function sendReport() {
+  const desc = document.getElementById('reportText').value.trim();
+  const c = captureContext();
+  const body =
+    'SCOUT CAMP TRACKER — BUG REPORT\n\n' +
+    'Problem: ' + (desc || '(none described)') + '\n\n' +
+    '--- context (auto-captured) ---\n' +
+    'Tab: ' + c.tab + '\n' +
+    'Camp filter: ' + c.camp + '  ·  Day: ' + c.day + '\n' +
+    'Packing filters: ' + c.packPerson + ' / ' + c.packCat + '  ·  Gear: ' + c.gearCat + '\n' +
+    'Open item: ' + (c.openItem || '—') + '\n' +
+    'Unsynced writes: ' + c.pending + '  ·  Items loaded: ' + c.items + '\n' +
+    'App version: ' + c.version + '\n' +
+    'When: ' + c.when + '\n' +
+    'Device: ' + c.ua + '\n' +
+    'Viewport: ' + c.viewport + '\n';
+  const subject = 'Scout Camp bug — ' + c.tab + (c.openItem ? (' · ' + c.openItem) : '');
+  closeReportSheet();
+  if (navigator.share) {
+    navigator.share({ title: subject, text: body }).catch(() => {});
+  } else {
+    location.href = 'mailto:' + REPORT_TO + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  }
+  toast('Thanks — opening your share sheet');
+}
+
+// ── Fresh-pack reset (R4) ─────────────────────
+// Resets statuses back to Not packed for the active camp + chosen person,
+// keeping items, photos and details. For starting a new event cleanly.
+async function resetPacking(person) {
+  const camp = activeTag === 'Everything' ? 'all camps' : activeTag;
+  let view = items.filter(matchTag);
+  if (person !== 'Everyone') view = view.filter(i => i.assignedTo === person);
+  const toReset = view.filter(i => i.status !== 'Not Started' || (i.qtyPacked || 0) > 0);
+  if (!toReset.length) { toast('Nothing to reset'); return; }
+  if (!confirm('Reset ' + toReset.length + ' item' + (toReset.length > 1 ? 's' : '') +
+      ' for ' + person + ' (' + camp + ') back to Not packed?\n\nPhotos and details are kept — this just starts a fresh pack.')) return;
+  toReset.forEach(i => { i.status = 'Not Started'; i.qtyPacked = 0; });
+  renderAll();
+  for (const i of toReset) {
+    await savePatch(i.id, { 'Status': { select: { name: 'Not Started' } }, 'Qty Packed': { number: 0 } }, null, true);
+  }
+  toast('Reset ' + toReset.length + ' items ✓');
 }
 
 // ── Render all ────────────────────────────────
@@ -1372,6 +1591,10 @@ if ('serviceWorker' in navigator) {
   });
 }
 document.getElementById('cameraInput').addEventListener('change', handlePhotoCapture);
+
+// Show any queued-offline count on load, and auto-flush the moment signal returns.
+updatePendingBadge();
+window.addEventListener('online', flushQueue);
 
 // Refresh from Notion whenever the app regains focus, so photos and status
 // changes made on one device appear on the others without a manual tap.
