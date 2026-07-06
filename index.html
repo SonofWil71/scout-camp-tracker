@@ -123,6 +123,8 @@
 
     /* ── Person cards ────────────────────────── */
     .person-card { background: var(--card); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 8px; }
+    .person-card.tappable { cursor: pointer; transition: opacity 0.12s; }
+    .person-card.tappable:active { opacity: 0.6; }
     .person-card-header { display: flex; align-items: center; gap: 12px; }
     .person-avatar {
       width: 40px; height: 40px; border-radius: 50%;
@@ -362,7 +364,7 @@
     <h1>🏕️ Scout Camp</h1>
     <button class="header-report" onclick="openReportSheet()" title="Report a problem">🐞 Report</button>
     <div class="sync-area">
-      <span class="pending-badge" id="pendingBadge" onclick="flushQueue()" title="Tap to sync now"></span>
+      <span class="pending-badge" id="pendingBadge" onclick="tapPending()" title="Tap to sync now"></span>
       <div class="sync-dot dot-orange" id="syncDot"></div>
       <span id="syncLabel">Loading…</span>
       <button class="refresh-btn" onclick="loadData()" title="Refresh">↻</button>
@@ -706,39 +708,52 @@ function queueSave(a){ try { localStorage.setItem('pendingWrites', JSON.stringif
 function queueAdd(op){ const a = queueGet(); a.push(op); queueSave(a); }
 function updatePendingBadge() {
   const el = document.getElementById('pendingBadge');
-  if (!el) return;
-  const n = queueGet().length;
-  el.textContent = n ? ('⚠︎ ' + n + ' unsynced') : '';
-  el.style.display = n ? 'inline-flex' : 'none';
+  if (el) {
+    const n = queueGet().length;
+    el.textContent = n ? ('⚠︎ ' + n + ' unsynced') : '';
+    el.style.display = n ? 'inline-flex' : 'none';
+  }
+  applySyncUI();
 }
 
-// Raw network PATCH. Returns true if it reached Notion; false on network/API
-// failure; throws only on 401 (apiFetch has already shown the gate).
-async function pushPatch(pageId, properties) {
-  const res = await apiFetch('/api/notion', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pageId, properties }),
-  });
-  return res.ok;
+// Network PATCH with a tri-state result so the queue can tell apart a temporary
+// outage from a permanent rejection:
+//   'ok'       reached Notion and saved
+//   'offline'  network error — worth retrying later
+//   'rejected' Notion returned an error status — retrying won't help
+// Throws only on 401 (apiFetch has already shown the gate).
+async function pushWrite(pageId, properties) {
+  try {
+    const res = await apiFetch('/api/notion', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pageId, properties }),
+    });
+    return res.ok ? 'ok' : 'rejected';
+  } catch(e) {
+    if (e.message === 'unauthorized') throw e;
+    return 'offline';
+  }
 }
 // Save an edit: try the network, else queue on device. Always tells the user.
 async function savePatch(pageId, properties, label, quiet) {
-  try {
-    if (await pushPatch(pageId, properties)) { if (!quiet) toast((label || 'Saved') + ' ✓'); return true; }
-  } catch(e) { if (e.message === 'unauthorized') return false; }
-  queueAdd({ kind: 'patch', pageId, properties });
+  let r;
+  try { r = await pushWrite(pageId, properties); }
+  catch(e) { return false; }                       // unauthorized — gate shown
+  if (r === 'ok')       { if (!quiet) toast((label || 'Saved') + ' ✓'); return true; }
+  if (r === 'rejected') { toast((label || 'That change') + " couldn't be saved — please try again", 'err'); return false; }
+  queueAdd({ kind: 'patch', pageId, properties, tries: 0 });
   toast('Saved on device — will sync when online', 'warn');
   return false;
 }
-// Re-upload a queued photo, then patch its URL. Returns true when synced.
+// Re-upload a queued photo, then patch its URL. Returns a tri-state like pushWrite.
 async function flushPhoto(itemId) {
   const dataURL = photoCache[itemId] || await photoGet(itemId);
-  if (!dataURL) return true;                       // photo was deleted — drop the op
+  if (!dataURL) return 'ok';                        // photo was deleted — drop the op
   const cloudUrl = await uploadToCloudinary(dataURL);
-  const ok = await pushPatch(itemId, { 'Photo URL': { url: cloudUrl } });
-  if (ok) { const it = items.find(i => i.id === itemId); if (it) it.photoUrl = cloudUrl; }
-  return ok;
+  const r = await pushWrite(itemId, { 'Photo URL': { url: cloudUrl } });
+  if (r === 'ok') { const it = items.find(i => i.id === itemId); if (it) it.photoUrl = cloudUrl; }
+  return r;
 }
 let _flushing = false;
 async function flushQueue() {
@@ -747,12 +762,19 @@ async function flushQueue() {
   if (!a.length) return;
   _flushing = true;
   const remaining = [];
-  let authFail = false;
+  let authFail = false, dropped = 0;
   for (const op of a) {
     if (authFail) { remaining.push(op); continue; }
     try {
-      const ok = op.kind === 'photo' ? await flushPhoto(op.itemId) : await pushPatch(op.pageId, op.properties);
-      if (!ok) remaining.push(op);
+      const r = op.kind === 'photo' ? await flushPhoto(op.itemId) : await pushWrite(op.pageId, op.properties);
+      if (r === 'ok') continue;                     // synced — drop from queue
+      if (r === 'rejected') {                       // server refuses — don't retry forever
+        op.tries = (op.tries || 0) + 1;
+        if (op.tries >= 3) { dropped++; continue; } // give up and drop it
+        remaining.push(op);
+      } else {
+        remaining.push(op);                         // offline — keep for next time
+      }
     } catch(e) {
       remaining.push(op);
       if (e.message === 'unauthorized') authFail = true;
@@ -760,7 +782,23 @@ async function flushQueue() {
   }
   queueSave(remaining);
   _flushing = false;
-  if (!remaining.length && !authFail) { toast('All changes synced ✓'); renderAll(); }
+  if (dropped) toast(dropped + " change" + (dropped > 1 ? 's' : '') + " couldn't sync — please redo " + (dropped > 1 ? 'them' : 'it'), 'err');
+  if (!remaining.length && !authFail && !dropped) { toast('All changes synced ✓'); renderAll(); }
+}
+// Badge tap: try to sync; if nothing drains (offline or permanently stuck), offer to clear.
+async function tapPending() {
+  const before = queueGet().length;
+  if (!before) return;
+  await flushQueue();
+  if (queueGet().length >= before) clearQueue();
+}
+// Manual escape hatch: clear stuck writes (from the badge).
+function clearQueue() {
+  if (!queueGet().length) return;
+  if (!confirm('Discard the unsynced changes still stuck on this device? Anything not saved to Notion will be lost — you can redo it.')) return;
+  queueSave([]);
+  toast('Cleared');
+  loadData();
 }
 
 // ── Photo storage (IndexedDB) ─────────────────
@@ -821,6 +859,12 @@ async function handlePhotoCapture(e) {
   const id = pendingPhotoId;
   pendingPhotoId = null;
   e.target.value = '';
+  await ingestPhoto(id, file);
+}
+// Shared photo pipeline for camera, library pick and clipboard paste:
+// resize → cache → IndexedDB → Cloudinary → Notion (queue on failure).
+async function ingestPhoto(id, file) {
+  if (!id || !file) return;
   const dataURL = await resizeImage(file, 1200);
   photoCache[id] = dataURL;
   await photoPut(id, dataURL);
@@ -828,13 +872,13 @@ async function handlePhotoCapture(e) {
   if (editingId === id) refreshSheetPhoto();
   try {
     const cloudUrl = await uploadToCloudinary(dataURL);
-    const ok = await pushPatch(id, { 'Photo URL': { url: cloudUrl } });
+    const r = await pushWrite(id, { 'Photo URL': { url: cloudUrl } });
     const item = items.find(i => i.id === id);
-    if (ok) { if (item) item.photoUrl = cloudUrl; }
-    else { queueAdd({ kind: 'photo', itemId: id }); toast('Photo saved on device — will sync', 'warn'); }
+    if (r === 'ok') { if (item) item.photoUrl = cloudUrl; toast('Photo added ✓'); }
+    else { queueAdd({ kind: 'photo', itemId: id, tries: 0 }); toast('Photo saved on device — will sync', 'warn'); }
   } catch(err) {
     if (err.message === 'unauthorized') return;
-    queueAdd({ kind: 'photo', itemId: id });
+    queueAdd({ kind: 'photo', itemId: id, tries: 0 });
     toast('Photo saved on device — will sync', 'warn');
   }
 }
@@ -897,11 +941,18 @@ function refreshSheetPhoto() {
 }
 
 // ── Sync indicator ────────────────────────────
-function setSyncState(s) {
+// The dot/label and the "unsynced" badge must never contradict: whenever writes
+// are queued we show Pending (orange), regardless of the last load result.
+let _syncBase = 'loading';
+function setSyncState(s) { _syncBase = s; applySyncUI(); }
+function applySyncUI() {
   const dot = document.getElementById('syncDot');
   const lbl = document.getElementById('syncLabel');
+  if (!dot || !lbl) return;
+  let s = _syncBase;
+  if (s === 'ok' && queueGet().length) s = 'pending';
   dot.className = 'sync-dot ' + (s === 'ok' ? 'dot-green' : s === 'err' ? 'dot-red' : 'dot-orange');
-  lbl.textContent = s === 'ok' ? 'Synced' : s === 'err' ? 'Offline' : 'Syncing…';
+  lbl.textContent = s === 'ok' ? 'Synced' : s === 'err' ? 'Offline' : s === 'pending' ? 'Pending' : 'Syncing…';
 }
 
 // ── Tab switching ─────────────────────────────
@@ -1161,13 +1212,14 @@ function renderOverview() {
   const bar = p => p>=100?'bar-green':p>=60?'bar-orange':'bar-red';
 
   function personCard(initials, label, avCls, st) {
-    return `<div class="person-card">
+    return `<div class="person-card tappable" onclick="goToPacking('${label}')">
   <div class="person-card-header">
     <div class="person-avatar ${avCls}">${initials}</div>
     <div class="person-stat">
       <div class="person-name">${label} <span class="pct-pill">${st.p}% packed</span></div>
       <div class="person-meta">${st.n} items · ~${st.kg} kg</div>
     </div>
+    <div style="color:var(--text3);font-size:22px;line-height:1;flex-shrink:0">›</div>
   </div>
   <div class="bar-bg"><div class="bar-fill ${bar(st.p)}" style="width:${st.p}%"></div></div>
 </div>`;
@@ -1308,6 +1360,13 @@ function tagFilterRow() {
 }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
 function setTag(t) { activeTag = t; lsSet('f_tag', t); renderAll(); }
+
+// Jump from an Overview person card straight to that person's Packing list.
+function goToPacking(person) {
+  packPerson = person;
+  lsSet('f_person', person);
+  switchTab('packing');
+}
 
 // ── Filter setters ────────────────────────────
 function setPackPerson(p) { packPerson=p; lsSet('f_person', p);  renderPacking(); }
@@ -1582,6 +1641,22 @@ if ('serviceWorker' in navigator) {
   });
 }
 document.getElementById('cameraInput').addEventListener('change', handlePhotoCapture);
+
+// Paste an image (clipboard) onto the item whose sheet is open. Best-effort:
+// works on desktop/iPad with a keyboard; iOS Safari rarely fires paste for
+// images, so the 📷 Add photo button (Camera / Photo Library) stays the main path.
+document.addEventListener('paste', async (e) => {
+  if (!editingId) return;
+  const data = e.clipboardData;
+  if (!data || !data.items) return;
+  for (const it of data.items) {
+    if (it.type && it.type.indexOf('image') === 0) {
+      const file = it.getAsFile();
+      if (file) { e.preventDefault(); await ingestPhoto(editingId, file); }
+      return;
+    }
+  }
+});
 
 // Show any queued-offline count on load, and auto-flush the moment signal returns.
 updatePendingBadge();
