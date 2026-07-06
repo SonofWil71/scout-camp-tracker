@@ -66,6 +66,8 @@
     .sync-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.4s; }
     #syncLabel { font-size: 12px; color: var(--text2); }
     .refresh-btn { background: none; border: none; cursor: pointer; padding: 4px; color: var(--text2); font-size: 16px; line-height: 1; }
+    .header-report { background: none; border: 0.5px solid var(--border); border-radius: 16px; padding: 4px 10px; font-size: 12px; font-weight: 500; color: var(--text2); cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; font-family: inherit; line-height: 1.2; }
+    .header-report:active { opacity: 0.6; }
     .pending-badge { display: none; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: #A05A00; background: rgba(255,149,0,0.14); border: 0.5px solid rgba(255,149,0,0.3); padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
 
     /* ── Toast (sync feedback) ────────────────── */
@@ -298,16 +300,6 @@
       display: none; align-items: center; justify-content: center;
     }
     .add-fab.show { display: flex; }
-    .report-fab {
-      position: fixed; left: 18px; z-index: 90;
-      bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 22px);
-      padding: 8px 13px; border-radius: 22px;
-      background: var(--card); color: var(--text2); border: 0.5px solid var(--border);
-      font-size: 13px; font-weight: 500; cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.16);
-      display: flex; align-items: center; gap: 5px;
-    }
-    .report-fab:active { opacity: 0.7; }
     .add-field { margin-bottom: 14px; }
     .add-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 0.5px solid var(--border); background: var(--bg); color: var(--text); font-size: 15px; font-family: inherit; -webkit-appearance: none; appearance: none; }
     .add-input:focus { outline: none; border-color: var(--camp); }
@@ -348,7 +340,6 @@
       .tab-bar { max-width: 520px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
       .header  { max-width: 520px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
       .add-fab { right: calc(50% - 260px + 18px); }
-      .report-fab { left: calc(50% - 260px + 18px); }
     }
   </style>
 </head>
@@ -369,6 +360,7 @@
 <div class="header">
   <div class="header-row">
     <h1>🏕️ Scout Camp</h1>
+    <button class="header-report" onclick="openReportSheet()" title="Report a problem">🐞 Report</button>
     <div class="sync-area">
       <span class="pending-badge" id="pendingBadge" onclick="flushQueue()" title="Tap to sync now"></span>
       <div class="sync-dot dot-orange" id="syncDot"></div>
@@ -416,7 +408,6 @@
 <input type="file" accept="image/*" id="cameraInput" style="display:none">
 
 <button class="add-fab" id="addFab" onclick="openAddSheet(currentTab)" title="Add item">+</button>
-<button class="report-fab" id="reportFab" onclick="openReportSheet()" title="Report a problem">🐞 Report</button>
 
 <div class="sheet-overlay" id="reportSheet">
   <div class="sheet-backdrop"></div>
