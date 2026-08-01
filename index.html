@@ -114,6 +114,14 @@
     .stat-num.good  { color: var(--green); }
     .stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
 
+    /* ── Day heading (multi-day menu view) ───── */
+    .day-head {
+      font-size: 15px; font-weight: 700; color: var(--text);
+      margin: 20px 2px 2px; padding-bottom: 6px;
+      border-bottom: 1.5px solid var(--camp);
+    }
+    .day-head:first-child { margin-top: 4px; }
+
     /* ── Section title ───────────────────────── */
     .section-title {
       font-size: 12px; font-weight: 600; color: var(--text2);
@@ -639,7 +647,8 @@ let packPerson   = lsGet('f_person', 'All');
 let packCat      = lsGet('f_cat', 'All');
 let gearCat      = lsGet('f_gearcat', 'All');
 let activeTag    = lsGet('f_tag', 'SR');
-let activeDay    = lsGet('f_day', 'Day 1');
+// Days are multi-select: an empty set means "all days".
+let activeDays   = new Set((lsGet('f_days', 'Day 1') || '').split(',').filter(Boolean));
 let editingId    = null;
 let pendingPhotoId   = null;
 let photoCache       = {};
@@ -1060,7 +1069,13 @@ function openAddSheet(ctx) {
   if (ctx === 'menu')      { cat.value = 'Food';  who.value = (packPerson !== 'All' && packPerson) ? packPerson : 'Mia'; addPrepSel = new Set(['Pre-packed']); }
   else if (ctx === 'gear') { cat.value = 'Gear';  who.value = 'Shared'; }
   else                     { cat.value = 'Clothing'; who.value = (packPerson !== 'All') ? packPerson : 'Mia'; }
-  if (ctx === 'menu') document.getElementById('addDay').value = activeDay;
+  if (ctx === 'menu') {
+    // Offer every known day, defaulting to the first one currently in view.
+    const dsel = document.getElementById('addDay');
+    const opts = knownDays().concat(['All Days']);
+    dsel.innerHTML = opts.map(d => `<option>${esc(d)}</option>`).join('');
+    dsel.value = selectedDays()[0] || 'Day 1';
+  }
   renderAddTags();
   renderAddPrep();
   renderIngredientChips();
@@ -1384,20 +1399,59 @@ ${content}
 }
 
 // ── Render: Menu ──────────────────────────────
-function renderMenu() {
-  const el    = document.getElementById('screen-menu');
-  const days  = ['Day 1','Day 2','Day 3'];
-  const dayFood = items.filter(i=>i.category==='Food'&&matchTag(i)&&(i.day===activeDay||i.day==='All Days'));
+// The day list is taken from the data, not hard-coded, so adding "Day 4" in
+// Notion makes it appear here with no code change.
+function knownDays() {
+  const set = new Set();
+  items.forEach(i => { if (i.category === 'Food' && i.day && i.day !== 'All Days') set.add(i.day); });
+  ['Day 1','Day 2','Day 3'].forEach(d => set.add(d));
+  return [...set].sort((a, b) => {
+    const na = parseInt((a.match(/\d+/) || [0])[0], 10);
+    const nb = parseInt((b.match(/\d+/) || [0])[0], 10);
+    return na === nb ? a.localeCompare(b) : na - nb;
+  });
+}
+// Which days are actually in view — an empty selection means every day.
+function selectedDays() {
+  const all = knownDays();
+  const picked = all.filter(d => activeDays.has(d));
+  return picked.length ? picked : all;
+}
 
-  const menuContent = MEALS.map(m=>{
-    const arr = dayFood.filter(i=>i.meal===m);
-    return arr.length ? `<div class="section-title">${m}</div>` + arr.map(mealCard).join('') : '';
-  }).join('') || emptyState('🍽️','No meals planned',`Tap + to add a meal for ${activeDay}.`);
+function renderMenu() {
+  const el   = document.getElementById('screen-menu');
+  const days = knownDays();
+  const sel  = selectedDays();
+  const showingAll = sel.length === days.length;
+
+  const pool = items.filter(i => i.category === 'Food' && matchTag(i));
+  const forDay = d => pool.filter(i => i.day === d || i.day === 'All Days');
+
+  const mealsFor = arr => MEALS.map(m => {
+    const list = arr.filter(i => i.meal === m);
+    return list.length ? `<div class="section-title">${m}</div>` + list.map(mealCard).join('') : '';
+  }).join('');
+
+  let menuContent;
+  if (sel.length === 1) {
+    menuContent = mealsFor(forDay(sel[0]));
+  } else {
+    // More than one day in view — head each block with the day so it stays clear.
+    menuContent = sel.map(d => {
+      const inner = mealsFor(forDay(d));
+      return inner ? `<div class="day-head">${esc(d)}</div>${inner}` : '';
+    }).join('');
+  }
+  if (!menuContent) {
+    menuContent = emptyState('🍽️','No meals planned',
+      `Tap + to add a meal for ${esc(sel[0] || 'Day 1')}.`);
+  }
 
   el.innerHTML = `
 ${tagFilterRow()}
 <div class="filter-row">
-  ${days.map(d=>`<div class="pill${activeDay===d?' active':''}" onclick="setDay('${d}')">${d}</div>`).join('')}
+  <div class="pill${showingAll && !activeDays.size ? ' active' : ''}" onclick="setAllDays()">All days</div>
+  ${days.map(d=>`<div class="pill${activeDays.has(d)?' active':''}" onclick="toggleDay('${esc(d)}')">${esc(d)}</div>`).join('')}
 </div>
 ${menuContent}
 <div style="height:8px"></div>`;
@@ -1446,7 +1500,9 @@ function goToPacking(person) {
 function setPackPerson(p) { packPerson=p; lsSet('f_person', p);  renderPacking(); }
 function setPackCat(c)    { packCat=c;    lsSet('f_cat', c);     renderPacking(); }
 function setGearCat(c)    { gearCat=c;    lsSet('f_gearcat', c); renderGear(); }
-function setDay(d)        { activeDay=d;  lsSet('f_day', d);     renderMenu(); }
+function saveDays() { lsSet('f_days', [...activeDays].join(',')); renderMenu(); }
+function toggleDay(d) { activeDays.has(d) ? activeDays.delete(d) : activeDays.add(d); saveDays(); }
+function setAllDays() { activeDays.clear(); saveDays(); }
 
 // ── Cycle status (tap dot) ────────────────────
 async function cycleStatus(id) {
@@ -1716,7 +1772,7 @@ const REPORT_TO = 'wilso1971@gmail.com';
 function captureContext() {
   const item = editingId ? (items.find(i => i.id === editingId) || null) : null;
   return {
-    tab: currentTab, camp: activeTag, day: activeDay,
+    tab: currentTab, camp: activeTag, day: selectedDays().join(', '),
     packPerson, packCat, gearCat,
     openItem: item ? item.name : null,
     pending: queueGet().length, items: items.length,
