@@ -543,9 +543,53 @@
         <span id="sheetQtyNeeded" style="font-size:13px;color:var(--text2);margin-left:8px"></span>
       </div>
     </div>
-    <div class="sheet-field" id="sheetMetaWrap" style="display:none">
-      <div class="sheet-label">Details</div>
-      <div class="sheet-note" id="sheetMeta"></div>
+    <div class="add-row">
+      <div class="sheet-field" style="flex:1">
+        <div class="sheet-label">Assigned to</div>
+        <select class="sheet-select" id="sheetWho">
+          <option>Mia</option><option>Ava</option><option>Shared</option>
+        </select>
+      </div>
+      <div class="sheet-field" style="flex:1">
+        <div class="sheet-label">Category</div>
+        <select class="sheet-select" id="sheetCat" onchange="refreshSheetFoodFields()">
+          <option>Clothing</option><option>Gear</option><option>Safety</option>
+          <option>Toiletries</option><option>Activity</option><option>Food</option>
+        </select>
+      </div>
+    </div>
+    <div id="sheetFoodWrap" style="display:none">
+      <div class="add-row">
+        <div class="sheet-field" style="flex:1">
+          <div class="sheet-label">Day</div>
+          <select class="sheet-select" id="sheetDay">
+            <option>Day 1</option><option>Day 2</option><option>Day 3</option><option>All Days</option>
+          </select>
+        </div>
+        <div class="sheet-field" style="flex:1">
+          <div class="sheet-label">Meal</div>
+          <select class="sheet-select" id="sheetMealSel">
+            <option>Breakfast</option><option>Morning Tea</option><option>Lunch</option>
+            <option>Afternoon Tea</option><option>Dinner</option><option>Snack</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-field">
+      <div class="sheet-label">Tags</div>
+      <div class="tag-chips" id="sheetTags"></div>
+    </div>
+    <div class="sheet-field">
+      <div class="sheet-label">Qty needed</div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="sheetQtyNeedAdj(-1)">−</button>
+        <span class="qty-val" id="sheetQtyNeed">1</span>
+        <button class="qty-btn" onclick="sheetQtyNeedAdj(1)">+</button>
+      </div>
+    </div>
+    <div class="sheet-field toggle-row" id="sheetNIWrap">
+      <div class="sheet-label" style="margin:0">Name inscribed on item</div>
+      <input type="checkbox" id="sheetNI">
     </div>
     <div class="sheet-field" id="sheetNotesWrap">
       <div class="sheet-label">Notes</div>
@@ -557,7 +601,7 @@
     </div>
     <div class="sheet-field" id="sheetPrepWrap" style="display:none">
       <div class="sheet-label">Prep</div>
-      <div class="sheet-note" id="sheetPrep"></div>
+      <div class="tag-chips" id="sheetPrep"></div>
     </div>
     <div class="sheet-field" id="sheetVerdictWrap" style="display:none">
       <div class="sheet-label">Verdict</div>
@@ -1024,11 +1068,15 @@ function toggleIngredient(i) {
   addIngrSel.has(s) ? addIngrSel.delete(s) : addIngrSel.add(s);
   renderIngredientChips();
 }
-function closeAddSheet() {
-  // Only ✕ or "Add to list" close the sheet now (backdrop/handle/keyboard-dismiss do not).
+// force=true skips the discard guard — used after a successful save, where the
+// input is already in Notion and there is nothing to lose.
+function closeAddSheet(force) {
+  // Only ✕ or "Add to list" close the sheet (backdrop/handle/keyboard-dismiss do not).
   // If anything's been typed, confirm before discarding.
-  const dirty = ['addName','addNotes','addContents'].some(id => (document.getElementById(id).value || '').trim());
-  if (dirty && !confirm('Discard this item? Your typing will be lost.')) return;
+  if (force !== true) {
+    const dirty = ['addName','addNotes','addContents'].some(id => (document.getElementById(id).value || '').trim());
+    if (dirty && !confirm('Discard this item? Your typing will be lost.')) return;
+  }
   document.getElementById('addSheet').classList.remove('open');
 }
 function renderAddTags() {
@@ -1100,7 +1148,7 @@ async function submitAddItem() {
   btn.textContent = 'Adding…'; btn.disabled = true;
   try {
     await createItem(properties);
-    closeAddSheet();
+    closeAddSheet(true);       // saved — nothing to discard, so skip the guard
     await loadData();
   } catch (e) {
     console.error('Add failed', e);
@@ -1395,38 +1443,71 @@ function openSheetById(id) {
   document.getElementById('sheetName').value = item.name;
   document.getElementById('sheetStatus').value = item.status;
 
-  const needsQty = item.qtyNeeded > 1;
-  document.getElementById('sheetQtyWrap').style.display = needsQty ? 'block' : 'none';
-  if (needsQty) {
-    document.getElementById('sheetQtyVal').textContent = item.qtyPacked;
-    document.getElementById('sheetQtyNeeded').textContent = 'of ' + item.qtyNeeded + ' needed';
-  }
+  document.getElementById('sheetQtyVal').textContent = item.qtyPacked || 0;
 
-  const metaParts = [];
-  if (item.assignedTo) metaParts.push('Assigned: ' + item.assignedTo);
-  if (item.tags && item.tags.length) metaParts.push('🏷 ' + item.tags.join(', '));
-  if (item.nameInscribed) metaParts.push('✒️ Name inscribed');
-  if (item.weight > 0) metaParts.push('Weight: ' + item.weight + 'g');
-  if (item.day)        metaParts.push('Day: ' + item.day);
-  if (item.meal)       metaParts.push('Meal: ' + item.meal);
-  document.getElementById('sheetMeta').textContent = metaParts.join(' · ');
-  document.getElementById('sheetMetaWrap').style.display = metaParts.length ? 'block' : 'none';
+  // Everything that used to be read-only "Details" is now editable, so a wrong
+  // choice at creation (wrong meal slot, wrong child) can be fixed in the app.
+  document.getElementById('sheetWho').value = item.assignedTo || 'Shared';
+  document.getElementById('sheetCat').value = item.category || 'Gear';
+  document.getElementById('sheetDay').value = item.day || 'Day 1';
+  document.getElementById('sheetMealSel').value = item.meal || 'Breakfast';
+  document.getElementById('sheetQtyNeed').textContent = item.qtyNeeded || 1;
+  document.getElementById('sheetNI').checked = !!item.nameInscribed;
+  sheetTagsSel = new Set(item.tags || []);
+  sheetPrepSel = new Set(item.prep || []);
+  renderSheetTags();
+  renderSheetPrep();
 
   document.getElementById('sheetNotes').value = item.notes || '';
-
   document.getElementById('sheetContents').value = item.contents || '';
-  const contLabel = item.category === 'Food' ? 'Ingredients' : 'Contents (kit / set)';
-  document.querySelector('#sheetContentsWrap .sheet-label').textContent = contLabel;
 
-  const isFood = item.category === 'Food';
-  document.getElementById('sheetPrep').textContent = (item.prep && item.prep.length) ? item.prep.join(' · ') : '';
-  document.getElementById('sheetPrepWrap').style.display = (isFood && item.prep && item.prep.length) ? 'block' : 'none';
   document.getElementById('sheetVerdict').value = item.verdict || '';
-  document.getElementById('sheetVerdictWrap').style.display = isFood ? 'block' : 'none';
-  document.getElementById('sheetDupWrap').style.display = isFood ? 'block' : 'none';
+  refreshSheetFoodFields();
+  syncQtyPackedRow();
 
   document.getElementById('editSheet').classList.add('open');
   refreshSheetPhoto();
+}
+
+// Show/hide the Food-only fields as the category is changed in the sheet.
+function refreshSheetFoodFields() {
+  const isFood = document.getElementById('sheetCat').value === 'Food';
+  document.getElementById('sheetFoodWrap').style.display    = isFood ? 'block' : 'none';
+  document.getElementById('sheetPrepWrap').style.display    = isFood ? 'block' : 'none';
+  document.getElementById('sheetVerdictWrap').style.display = isFood ? 'block' : 'none';
+  document.getElementById('sheetDupWrap').style.display     = isFood ? 'block' : 'none';
+  document.getElementById('sheetNIWrap').style.display      = isFood ? 'none'  : 'flex';
+  document.querySelector('#sheetContentsWrap .sheet-label').textContent =
+    isFood ? 'Ingredients' : 'Contents (kit / set)';
+}
+
+let sheetTagsSel = new Set();
+let sheetPrepSel = new Set();
+function renderSheetTags() {
+  document.getElementById('sheetTags').innerHTML = TAG_OPTIONS
+    .map(t => `<div class="tag-chip${sheetTagsSel.has(t) ? ' on' : ''}" onclick="toggleSheetTag('${t}')">${t}</div>`)
+    .join('');
+}
+function toggleSheetTag(t) { sheetTagsSel.has(t) ? sheetTagsSel.delete(t) : sheetTagsSel.add(t); renderSheetTags(); }
+function renderSheetPrep() {
+  document.getElementById('sheetPrep').innerHTML = PREP_OPTIONS
+    .map(p => `<div class="tag-chip${sheetPrepSel.has(p) ? ' on' : ''}" onclick="toggleSheetPrep('${p}')">${p}</div>`)
+    .join('');
+}
+function toggleSheetPrep(p) { sheetPrepSel.has(p) ? sheetPrepSel.delete(p) : sheetPrepSel.add(p); renderSheetPrep(); }
+function sheetQtyNeedAdj(d) {
+  const el = document.getElementById('sheetQtyNeed');
+  el.textContent = Math.max(1, parseInt(el.textContent) + d);
+  syncQtyPackedRow();
+}
+// "Qty packed" only makes sense when more than one is needed — and Qty needed
+// is now editable, so this has to follow it live.
+function syncQtyPackedRow() {
+  const need = parseInt(document.getElementById('sheetQtyNeed').textContent) || 1;
+  document.getElementById('sheetQtyWrap').style.display = need > 1 ? 'block' : 'none';
+  document.getElementById('sheetQtyNeeded').textContent = 'of ' + need + ' needed';
+  const packedEl = document.getElementById('sheetQtyVal');
+  packedEl.textContent = Math.min(parseInt(packedEl.textContent) || 0, need);
 }
 
 async function duplicateMeal() {
@@ -1472,7 +1553,8 @@ async function archiveItem() {
 
 function adjustQty(delta) {
   const item = items.find(i=>i.id===editingId);
-  const max  = item ? (item.qtyNeeded||1) : 99;
+  // cap against the value currently in the sheet, not the saved one
+  const max  = parseInt(document.getElementById('sheetQtyNeed').textContent) || 1;
   const el   = document.getElementById('sheetQtyVal');
   el.textContent = Math.max(0, Math.min(max, parseInt(el.textContent)+delta));
 }
@@ -1487,23 +1569,45 @@ async function saveSheet() {
   const contents  = document.getElementById('sheetContents').value.trim();
   const status    = document.getElementById('sheetStatus').value;
   const qtyPacked = parseInt(document.getElementById('sheetQtyVal').textContent)||0;
+  const who       = document.getElementById('sheetWho').value;
+  const cat       = document.getElementById('sheetCat').value;
+  const qtyNeeded = parseInt(document.getElementById('sheetQtyNeed').textContent)||1;
+  const ni        = document.getElementById('sheetNI').checked;
+  const tags      = [...sheetTagsSel];
+  const isFood    = cat === 'Food';
   // Update the on-screen model first (optimistic), then persist.
   if (name) item.name = name;
-  item.notes     = notes;
-  item.contents  = contents;
-  item.status    = status;
-  item.qtyPacked = qtyPacked;
+  item.notes         = notes;
+  item.contents      = contents;
+  item.status        = status;
+  item.qtyPacked     = Math.min(qtyPacked, qtyNeeded);
+  item.assignedTo    = who;
+  item.category      = cat;
+  item.qtyNeeded     = qtyNeeded;
+  item.nameInscribed = ni;
+  item.tags          = tags;
   const payload = {
-    'Status':     { select: { name: status } },
-    'Qty Packed': { number: qtyPacked },
-    'Notes':      { rich_text: notes    ? [{ text: { content: notes } }]    : [] },
-    'Contents':   { rich_text: contents ? [{ text: { content: contents } }] : [] },
+    'Status':      { select: { name: status } },
+    'Qty Packed':  { number: item.qtyPacked },
+    'Qty Needed':  { number: qtyNeeded },
+    'Assigned To': { select: { name: who } },
+    'Category':    { select: { name: cat } },
+    'Name Inscribed': { checkbox: ni },
+    'Tags':        { multi_select: tags.map(t => ({ name: t })) },
+    'Notes':       { rich_text: notes    ? [{ text: { content: notes } }]    : [] },
+    'Contents':    { rich_text: contents ? [{ text: { content: contents } }] : [] },
   };
   if (name) payload['Item Name'] = { title: [{ text: { content: name } }] };
-  if (item.category === 'Food') {
+  if (isFood) {
     const verdict = document.getElementById('sheetVerdict').value;
-    item.verdict = verdict;
+    const day     = document.getElementById('sheetDay').value;
+    const meal    = document.getElementById('sheetMealSel').value;
+    const prep    = [...sheetPrepSel];
+    item.verdict = verdict; item.day = day; item.meal = meal; item.prep = prep;
     payload['Verdict'] = verdict ? { select: { name: verdict } } : { select: null };
+    payload['Day']     = { select: { name: day } };
+    payload['Meal']    = { select: { name: meal } };
+    payload['Prep']    = { multi_select: prep.map(p => ({ name: p })) };
   }
   closeSheet();
   renderAll();
