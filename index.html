@@ -766,6 +766,7 @@ function updatePendingBadge() {
 //   'offline'  network error — worth retrying later
 //   'rejected' Notion returned an error status — retrying won't help
 // Throws only on 401 (apiFetch has already shown the gate).
+let lastWriteError = null;      // surfaced in the toast and the bug report
 async function pushWrite(pageId, properties) {
   try {
     const res = await apiFetch('/api/notion', {
@@ -773,11 +774,31 @@ async function pushWrite(pageId, properties) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pageId, properties }),
     });
-    return res.ok ? 'ok' : 'rejected';
+    if (res.ok) { lastWriteError = null; return 'ok'; }
+    // Keep the real reason — Notion says exactly which property it rejected.
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = body.message || body.error || JSON.stringify(body).slice(0, 300);
+    } catch(e) { detail = res.statusText || ''; }
+    lastWriteError = {
+      status: res.status,
+      message: detail,
+      fields: Object.keys(properties).join(', '),
+      when: new Date().toISOString(),
+    };
+    console.error('Notion rejected the write:', lastWriteError);
+    return 'rejected';
   } catch(e) {
     if (e.message === 'unauthorized') throw e;
     return 'offline';
   }
+}
+// Short, readable reason for the red toast.
+function writeErrorSummary() {
+  if (!lastWriteError) return '';
+  const m = (lastWriteError.message || '').replace(/\s+/g, ' ').trim();
+  return m ? (' — ' + m.slice(0, 110)) : (' — error ' + lastWriteError.status);
 }
 // Save an edit: try the network, else queue on device. Always tells the user.
 async function savePatch(pageId, properties, label, quiet) {
@@ -785,7 +806,12 @@ async function savePatch(pageId, properties, label, quiet) {
   try { r = await pushWrite(pageId, properties); }
   catch(e) { return false; }                       // unauthorized — gate shown
   if (r === 'ok')       { if (!quiet) toast((label || 'Saved') + ' ✓'); return true; }
-  if (r === 'rejected') { toast((label || 'That change') + " couldn't be saved — please try again", 'err'); return false; }
+  if (r === 'rejected') {
+    toast('Not saved' + writeErrorSummary(), 'err');
+    // Don't leave a change on screen that Notion refused — show the truth.
+    loadData();
+    return false;
+  }
   queueAdd({ kind: 'patch', pageId, properties, tries: 0 });
   toast('Saved on device — will sync when online', 'warn');
   return false;
@@ -1447,10 +1473,12 @@ function openSheetById(id) {
 
   // Everything that used to be read-only "Details" is now editable, so a wrong
   // choice at creation (wrong meal slot, wrong child) can be fixed in the app.
-  document.getElementById('sheetWho').value = item.assignedTo || 'Shared';
-  document.getElementById('sheetCat').value = item.category || 'Gear';
-  document.getElementById('sheetDay').value = item.day || 'Day 1';
-  document.getElementById('sheetMealSel').value = item.meal || 'Breakfast';
+  // setSelect keeps a value Notion already holds even if it isn't in our list,
+  // so opening an item can never silently rewrite it to the first option.
+  setSelect('sheetWho', item.assignedTo || 'Shared');
+  setSelect('sheetCat', item.category || 'Gear');
+  setSelect('sheetDay', item.day || 'Day 1');
+  setSelect('sheetMealSel', item.meal || 'Breakfast');
   document.getElementById('sheetQtyNeed').textContent = item.qtyNeeded || 1;
   document.getElementById('sheetNI').checked = !!item.nameInscribed;
   sheetTagsSel = new Set(item.tags || []);
@@ -1464,9 +1492,43 @@ function openSheetById(id) {
   document.getElementById('sheetVerdict').value = item.verdict || '';
   refreshSheetFoodFields();
   syncQtyPackedRow();
+  sheetSnapshot = readSheet();     // baseline, so Save can send only what changed
 
   document.getElementById('editSheet').classList.add('open');
   refreshSheetPhoto();
+}
+
+// Set a <select>, adding the option first if Notion holds a value we don't list.
+function setSelect(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (value && !Array.from(el.options).some(o => o.value === value)) {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = value;
+    el.appendChild(o);
+  }
+  el.value = value;
+}
+
+// Everything the edit sheet currently shows, as a plain object.
+let sheetSnapshot = null;
+function readSheet() {
+  return {
+    name:      document.getElementById('sheetName').value.trim(),
+    status:    document.getElementById('sheetStatus').value,
+    qtyPacked: parseInt(document.getElementById('sheetQtyVal').textContent) || 0,
+    qtyNeeded: parseInt(document.getElementById('sheetQtyNeed').textContent) || 1,
+    who:       document.getElementById('sheetWho').value,
+    cat:       document.getElementById('sheetCat').value,
+    ni:        document.getElementById('sheetNI').checked,
+    tags:      [...sheetTagsSel].sort().join('|'),
+    prep:      [...sheetPrepSel].sort().join('|'),
+    notes:     document.getElementById('sheetNotes').value.trim(),
+    contents:  document.getElementById('sheetContents').value.trim(),
+    day:       document.getElementById('sheetDay').value,
+    meal:      document.getElementById('sheetMealSel').value,
+    verdict:   document.getElementById('sheetVerdict').value,
+  };
 }
 
 // Show/hide the Food-only fields as the category is changed in the sheet.
@@ -1567,48 +1629,42 @@ async function saveSheet() {
   const name      = document.getElementById('sheetName').value.trim();
   const notes     = document.getElementById('sheetNotes').value.trim();
   const contents  = document.getElementById('sheetContents').value.trim();
-  const status    = document.getElementById('sheetStatus').value;
-  const qtyPacked = parseInt(document.getElementById('sheetQtyVal').textContent)||0;
-  const who       = document.getElementById('sheetWho').value;
-  const cat       = document.getElementById('sheetCat').value;
-  const qtyNeeded = parseInt(document.getElementById('sheetQtyNeed').textContent)||1;
-  const ni        = document.getElementById('sheetNI').checked;
-  const tags      = [...sheetTagsSel];
-  const isFood    = cat === 'Food';
-  // Update the on-screen model first (optimistic), then persist.
-  if (name) item.name = name;
-  item.notes         = notes;
-  item.contents      = contents;
-  item.status        = status;
-  item.qtyPacked     = Math.min(qtyPacked, qtyNeeded);
-  item.assignedTo    = who;
-  item.category      = cat;
-  item.qtyNeeded     = qtyNeeded;
-  item.nameInscribed = ni;
-  item.tags          = tags;
-  const payload = {
-    'Status':      { select: { name: status } },
-    'Qty Packed':  { number: item.qtyPacked },
-    'Qty Needed':  { number: qtyNeeded },
-    'Assigned To': { select: { name: who } },
-    'Category':    { select: { name: cat } },
-    'Name Inscribed': { checkbox: ni },
-    'Tags':        { multi_select: tags.map(t => ({ name: t })) },
-    'Notes':       { rich_text: notes    ? [{ text: { content: notes } }]    : [] },
-    'Contents':    { rich_text: contents ? [{ text: { content: contents } }] : [] },
-  };
-  if (name) payload['Item Name'] = { title: [{ text: { content: name } }] };
+  const now  = readSheet();
+  const was  = sheetSnapshot || {};
+  now.qtyPacked = Math.min(now.qtyPacked, now.qtyNeeded);
+  const isFood  = now.cat === 'Food';
+  const changed = k => now[k] !== was[k];
+
+  // Send ONLY what actually changed. A property the app never touched can then
+  // never break an unrelated save, and the failure surface stays small.
+  const payload = {};
+  if (name && changed('name'))  payload['Item Name']      = { title: [{ text: { content: name } }] };
+  if (changed('status'))        payload['Status']         = { select: { name: now.status } };
+  if (changed('qtyPacked'))     payload['Qty Packed']     = { number: now.qtyPacked };
+  if (changed('qtyNeeded'))     payload['Qty Needed']     = { number: now.qtyNeeded };
+  if (changed('who'))           payload['Assigned To']    = { select: { name: now.who } };
+  if (changed('cat'))           payload['Category']       = { select: { name: now.cat } };
+  if (changed('ni'))            payload['Name Inscribed'] = { checkbox: now.ni };
+  if (changed('tags'))          payload['Tags']           = { multi_select: [...sheetTagsSel].map(t => ({ name: t })) };
+  if (changed('notes'))         payload['Notes']          = { rich_text: notes    ? [{ text: { content: notes } }]    : [] };
+  if (changed('contents'))      payload['Contents']       = { rich_text: contents ? [{ text: { content: contents } }] : [] };
   if (isFood) {
-    const verdict = document.getElementById('sheetVerdict').value;
-    const day     = document.getElementById('sheetDay').value;
-    const meal    = document.getElementById('sheetMealSel').value;
-    const prep    = [...sheetPrepSel];
-    item.verdict = verdict; item.day = day; item.meal = meal; item.prep = prep;
-    payload['Verdict'] = verdict ? { select: { name: verdict } } : { select: null };
-    payload['Day']     = { select: { name: day } };
-    payload['Meal']    = { select: { name: meal } };
-    payload['Prep']    = { multi_select: prep.map(p => ({ name: p })) };
+    if (changed('day'))     payload['Day']     = { select: { name: now.day } };
+    if (changed('meal'))    payload['Meal']    = { select: { name: now.meal } };
+    if (changed('prep'))    payload['Prep']    = { multi_select: [...sheetPrepSel].map(p => ({ name: p })) };
+    if (changed('verdict')) payload['Verdict'] = now.verdict ? { select: { name: now.verdict } } : { select: null };
   }
+
+  if (!Object.keys(payload).length) { closeSheet(); return; }   // nothing changed
+
+  // Update the on-screen model (optimistic), then persist.
+  if (name) item.name = name;
+  item.notes = notes; item.contents = contents;
+  item.status = now.status; item.qtyPacked = now.qtyPacked; item.qtyNeeded = now.qtyNeeded;
+  item.assignedTo = now.who; item.category = now.cat; item.nameInscribed = now.ni;
+  item.tags = [...sheetTagsSel];
+  if (isFood) { item.day = now.day; item.meal = now.meal; item.prep = [...sheetPrepSel]; item.verdict = now.verdict; }
+
   closeSheet();
   renderAll();
   savePatch(id, payload, 'Saved');
@@ -1664,6 +1720,7 @@ function captureContext() {
     packPerson, packCat, gearCat,
     openItem: item ? item.name : null,
     pending: queueGet().length, items: items.length,
+    lastError: lastWriteError,
     version: APP_VERSION, when: new Date().toISOString(),
     ua: navigator.userAgent, viewport: innerWidth + 'x' + innerHeight,
   };
@@ -1690,6 +1747,10 @@ function sendReport() {
     'Packing filters: ' + c.packPerson + ' / ' + c.packCat + '  ·  Gear: ' + c.gearCat + '\n' +
     'Open item: ' + (c.openItem || '—') + '\n' +
     'Unsynced writes: ' + c.pending + '  ·  Items loaded: ' + c.items + '\n' +
+    (c.lastError
+      ? 'LAST SAVE ERROR: ' + c.lastError.status + ' — ' + c.lastError.message +
+        '\n  (fields sent: ' + c.lastError.fields + ' · at ' + c.lastError.when + ')\n'
+      : '') +
     'App version: ' + c.version + '\n' +
     'When: ' + c.when + '\n' +
     'Device: ' + c.ua + '\n' +
