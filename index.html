@@ -687,7 +687,7 @@ function parse(page) {
     photoUrl:   prop(page, 'Photo URL') || '',
     contents:   prop(page, 'Contents') || '',
     nameInscribed: prop(page, 'Name Inscribed') || false,
-    verdict:    prop(page, 'Verdict') || '',
+    verdict:    prop(page, 'Meal Verdict') || '',
     prep:       prop(page, 'Prep') || [],
     tags:       prop(page, 'Tags') || [],
   };
@@ -730,6 +730,7 @@ async function loadData() {
     const res = await apiFetch('/api/notion');
     if (!res.ok) throw new Error(res.statusText);
     const pages = await res.json();
+    checkSchema(pages[0]);
     items = pages.map(parse).filter(i => !i.archived);
     if (!photoCacheLoaded) await preloadPhotos();
     setSyncState('ok');
@@ -741,6 +742,27 @@ async function loadData() {
     setSyncState('err');
     console.error('Load failed:', e);
     document.getElementById('screen-overview').innerHTML = emptyState('📡', "Can't connect", 'Check your connection or Notion config,<br>then tap ↻ to retry.');
+  }
+}
+
+// ── Schema guard ──────────────────────────────
+// The app addresses Notion properties by name. If one is renamed or was never
+// named what the code assumed, reads return blank and writes are rejected —
+// silently, until someone touches that field. This catches it on load instead.
+// (Learned the hard way: the app said "Verdict", Notion said "Meal Verdict".)
+const EXPECTED_PROPS = [
+  'Item Name','Category','Assigned To','Status','Day','Meal','Weight (g)',
+  'Qty Needed','Qty Packed','Notes','Archived','Photo URL','Contents',
+  'Name Inscribed','Meal Verdict','Prep','Tags'
+];
+let schemaMissing = [];
+function checkSchema(page) {
+  if (!page || !page.properties) return;
+  const have = Object.keys(page.properties);
+  schemaMissing = EXPECTED_PROPS.filter(p => have.indexOf(p) === -1);
+  if (schemaMissing.length) {
+    console.error('Notion schema mismatch — app expects these but they are missing:', schemaMissing);
+    toast('Setup problem: Notion is missing ' + schemaMissing.join(', '), 'err');
   }
 }
 
@@ -1183,7 +1205,7 @@ async function submitAddItem() {
     properties['Meal'] = { select: { name: document.getElementById('addMeal').value } };
     properties['Prep'] = { multi_select: [...addPrepSel].map(p => ({ name: p })) };
     const verdict = document.getElementById('addVerdict').value;
-    if (verdict) properties['Verdict'] = { select: { name: verdict } };
+    if (verdict) properties['Meal Verdict'] = { select: { name: verdict } };
   }
   const btn = document.getElementById('addSaveBtn');
   btn.textContent = 'Adding…'; btn.disabled = true;
@@ -1708,7 +1730,7 @@ async function saveSheet() {
     if (changed('day'))     payload['Day']     = { select: { name: now.day } };
     if (changed('meal'))    payload['Meal']    = { select: { name: now.meal } };
     if (changed('prep'))    payload['Prep']    = { multi_select: [...sheetPrepSel].map(p => ({ name: p })) };
-    if (changed('verdict')) payload['Verdict'] = now.verdict ? { select: { name: now.verdict } } : { select: null };
+    if (changed('verdict')) payload['Meal Verdict'] = now.verdict ? { select: { name: now.verdict } } : { select: null };
   }
 
   if (!Object.keys(payload).length) { closeSheet(); return; }   // nothing changed
@@ -1777,6 +1799,7 @@ function captureContext() {
     openItem: item ? item.name : null,
     pending: queueGet().length, items: items.length,
     lastError: lastWriteError,
+    schemaMissing: schemaMissing.length ? schemaMissing.join(', ') : null,
     version: APP_VERSION, when: new Date().toISOString(),
     ua: navigator.userAgent, viewport: innerWidth + 'x' + innerHeight,
   };
@@ -1807,6 +1830,7 @@ function sendReport() {
       ? 'LAST SAVE ERROR: ' + c.lastError.status + ' — ' + c.lastError.message +
         '\n  (fields sent: ' + c.lastError.fields + ' · at ' + c.lastError.when + ')\n'
       : '') +
+    (c.schemaMissing ? 'NOTION SCHEMA MISSING: ' + c.schemaMissing + '\n' : '') +
     'App version: ' + c.version + '\n' +
     'When: ' + c.when + '\n' +
     'Device: ' + c.ua + '\n' +
