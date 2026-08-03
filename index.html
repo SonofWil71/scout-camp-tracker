@@ -190,6 +190,60 @@
     .item-meta { font-size: 12px; color: var(--text2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 
+    /* ── Swipe row (edit / archive / delete) ─── */
+    .swipe-wrap { position: relative; overflow: hidden; border-radius: var(--radius); margin-bottom: 8px; background: var(--card); }
+    .swipe-actions {
+      position: absolute; top: 0; right: 0; bottom: 0;
+      display: flex; align-items: stretch;
+    }
+    .swipe-actions button {
+      width: 72px; border: none; color: #fff; cursor: pointer;
+      font-size: 12px; font-weight: 600; font-family: inherit;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    }
+    .swipe-actions .sa-ico { font-size: 17px; line-height: 1; }
+    .sa-edit { background: var(--blue); }
+    .sa-arch { background: #8E8E93; }
+    .sa-del  { background: var(--red); }
+    .swipe-wrap .item-card {
+      margin-bottom: 0; position: relative;
+      transition: transform 0.22s cubic-bezier(0.22,0.61,0.36,1);
+      touch-action: pan-y;
+    }
+    .swipe-wrap.dragging .item-card { transition: none; }
+
+    /* ── Select mode (bulk actions) ──────────── */
+    .select-btn {
+      padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500;
+      white-space: nowrap; cursor: pointer; background: var(--card); color: var(--camp);
+      border: 0.5px solid var(--border); font-family: inherit; flex-shrink: 0;
+    }
+    .select-btn.on { background: var(--camp); color: #fff; border-color: var(--camp); }
+    .sel-box {
+      width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+      border: 1.5px solid var(--text3); display: flex; align-items: center;
+      justify-content: center; font-size: 13px; color: #fff; background: transparent;
+    }
+    .sel-box.on { background: var(--camp); border-color: var(--camp); }
+    .bulk-bar {
+      position: fixed; left: 0; right: 0; z-index: 95;
+      bottom: calc(var(--tab-h) + env(safe-area-inset-bottom));
+      background: var(--card); border-top: 0.5px solid var(--border);
+      padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+      display: none; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .bulk-bar.show { display: flex; }
+    .bulk-count { font-size: 13px; font-weight: 600; color: var(--text2); margin-right: auto; }
+    .bulk-bar button {
+      padding: 8px 14px; border-radius: 10px; border: 0.5px solid var(--border);
+      background: var(--bg); color: var(--camp); font-size: 14px; font-weight: 500;
+      cursor: pointer; font-family: inherit;
+    }
+    .bulk-bar button.danger { color: var(--red); }
+    @media (min-width: 600px) {
+      .bulk-bar { max-width: 520px; left: 50%; transform: translateX(-50%); }
+    }
+
     /* ── Filter pills ────────────────────────── */
     .filter-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 2px; }
     .filter-row::-webkit-scrollbar { display: none; }
@@ -418,6 +472,13 @@
 <input type="file" accept="image/*" id="cameraInput" style="display:none">
 
 <button class="add-fab" id="addFab" onclick="openAddSheet(currentTab)" title="Add item">+</button>
+
+<div class="bulk-bar" id="bulkBar">
+  <span class="bulk-count" id="bulkCount">0 selected</span>
+  <button onclick="bulkReset()">Reset</button>
+  <button id="bulkCopyDay" onclick="bulkCopyToDay()">Copy to day…</button>
+  <button class="danger" onclick="bulkArchive()">Archive</button>
+</div>
 
 <div class="sheet-overlay" id="reportSheet">
   <div class="sheet-backdrop"></div>
@@ -1063,7 +1124,11 @@ function switchTab(tab) {
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('screen-' + tab).classList.add('active');
   currentTab = tab;
-  document.getElementById('addFab').classList.toggle('show', tab !== 'overview');
+  // Leaving a screen cancels any selection or open swipe row.
+  closeSwipe();
+  if (selectMode) { selectMode = false; selectedIds.clear(); }
+  updateBulkBar();
+  syncFab();
   if (tab === 'packing') renderPacking();
   if (tab === 'menu')    renderMenu();
   if (tab === 'gear')    renderGear();
@@ -1254,11 +1319,33 @@ const VERDICT_ICON = { 'Favourite': '⭐', 'Do again': '🔁', 'Not again': '✋
 function verdictBadge(v) {
   return v ? `<span class="badge b-purple">${VERDICT_ICON[v] || ''} ${v}</span>` : '';
 }
+// Wraps a card so it can slide left to reveal Edit / Archive / Delete.
+function swipeWrap(id, cardHtml) {
+  return `<div class="swipe-wrap" data-id="${id}">
+  <div class="swipe-actions">
+    <button class="sa-edit" onclick="swipeAction('edit','${id}')"><span class="sa-ico">✎</span>Edit</button>
+    <button class="sa-arch" onclick="swipeAction('archive','${id}')"><span class="sa-ico">📥</span>Archive</button>
+    <button class="sa-del" onclick="swipeAction('delete','${id}')"><span class="sa-ico">🗑</span>Delete</button>
+  </div>
+  ${cardHtml}
+</div>`;
+}
+// The checkbox shown in front of a card while Select mode is on.
+function selBox(id) {
+  return selectMode
+    ? `<div class="sel-box${selectedIds.has(id) ? ' on' : ''}">${selectedIds.has(id) ? '✓' : ''}</div>`
+    : '';
+}
+function cardTap(id) {
+  return selectMode ? `toggleSelect('${id}')` : `openSheetById('${id}')`;
+}
+
 function mealCard(item) {
   const photo = item.photoUrl || photoCache[item.id];
   const ing   = item.contents ? `<div class="item-meta">${esc(item.contents)}</div>` : '';
   const prep  = (item.prep && item.prep.length) ? `<div class="item-meta">🍴 ${item.prep.map(esc).join(' · ')}</div>` : '';
-  return `<div class="item-card" onclick="openSheetById('${item.id}')">
+  const card = `<div class="item-card" onclick="${cardTap(item.id)}">
+  ${selBox(item.id)}
   <button class="status-btn ${dotClass(item.status)}" onclick="event.stopPropagation();cycleStatus('${item.id}')" title="Tap to change status"></button>
   <div class="item-info">
     <div class="item-name">${esc(item.name)}</div>
@@ -1266,6 +1353,7 @@ function mealCard(item) {
   </div>
   <div class="item-right">${verdictBadge(item.verdict)}${statusBadge(item.status)}${photo?`<img class="item-thumb" src="${photo}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Add photo">📷</button>`}</div>
 </div>`;
+  return swipeWrap(item.id, card);
 }
 
 // ── Item card ─────────────────────────────────
@@ -1276,7 +1364,8 @@ function itemCard(item) {
   if (item.qtyNeeded > 1)  parts.push(item.qtyPacked + '/' + item.qtyNeeded + ' packed');
   if (item.day && item.day !== 'All Days') parts.push(item.day);
   const meta = parts.join(' · ');
-  return `<div class="item-card${crit?' critical':''}" onclick="openSheetById('${item.id}')">
+  const card = `<div class="item-card${crit?' critical':''}" onclick="${cardTap(item.id)}">
+  ${selBox(item.id)}
   <button class="status-btn ${dotClass(item.status)}" onclick="event.stopPropagation();cycleStatus('${item.id}')" title="Tap to change status"></button>
   <div class="item-info">
     <div class="item-name">${esc(item.name)}${item.nameInscribed?' <span title="Name inscribed">✒️</span>':''}</div>
@@ -1284,6 +1373,7 @@ function itemCard(item) {
   </div>
   <div class="item-right">${catBadge(item.category)}${statusBadge(item.status)}${(item.photoUrl||photoCache[item.id])?`<img class="item-thumb" src="${item.photoUrl||photoCache[item.id]}" alt="" onclick="event.stopPropagation();openPhotoModal('${item.id}')">`:`<button class="cam-btn" onclick="event.stopPropagation();takePhoto('${item.id}')" title="Add photo">📷</button>`}</div>
 </div>`;
+  return swipeWrap(item.id, card);
 }
 
 // ── Empty / loading helpers ───────────────────
@@ -1412,6 +1502,7 @@ function renderPacking() {
 ${tagFilterRow()}
 <div class="filter-row">
   ${['All','Mia','Ava','Shared'].map(p=>`<div class="pill${packPerson===p?' active':''}" onclick="setPackPerson('${p}')">${p}</div>`).join('')}
+  ${selectButton()}
 </div>
 <div class="filter-row">
   ${cats.map(c=>`<div class="pill${packCat===c?' active':''}" onclick="setPackCat('${c}')">${c}</div>`).join('')}
@@ -1474,6 +1565,7 @@ ${tagFilterRow()}
 <div class="filter-row">
   <div class="pill${showingAll && !activeDays.size ? ' active' : ''}" onclick="setAllDays()">All days</div>
   ${days.map(d=>`<div class="pill${activeDays.has(d)?' active':''}" onclick="toggleDay('${esc(d)}')">${esc(d)}</div>`).join('')}
+  ${selectButton()}
 </div>
 ${menuContent}
 <div style="height:8px"></div>`;
@@ -1490,6 +1582,7 @@ function renderGear() {
 ${tagFilterRow()}
 <div class="filter-row">
   ${cats.map(c=>`<div class="pill${gearCat===c?' active':''}" onclick="setGearCat('${c}')">${c}</div>`).join('')}
+  ${selectButton()}
 </div>
 ${pool.length ? pool.map(itemCard).join('') : emptyState('⛺','No shared gear','Tap + to add shared gear for the patrol.')}
 <div style="height:8px"></div>`;
@@ -1537,8 +1630,195 @@ async function cycleStatus(id) {
   savePatch(id, { 'Status': { select: { name: next } } }, 'Status', true);
 }
 
+// ── Swipe to reveal Edit / Archive / Delete ───
+// Delete moves the row to Notion's trash, where it stays recoverable for 30
+// days. Archive keeps it in the database, hidden from the app.
+const SWIPE_W = 216;               // three 72px buttons
+let _openSwipe = null;
+
+// The + button sits over the right-hand actions, so it hides while a row is
+// open (or while selecting) and comes back afterwards.
+function syncFab() {
+  const fab = document.getElementById('addFab');
+  if (!fab) return;
+  fab.classList.toggle('show', currentTab !== 'overview' && !_openSwipe && !selectMode);
+}
+function closeSwipe(wrap) {
+  const w = wrap || _openSwipe;
+  if (!w) { syncFab(); return; }
+  const card = w.querySelector('.item-card');
+  if (card) card.style.transform = '';
+  if (_openSwipe === w) _openSwipe = null;
+  syncFab();
+}
+function openSwipe(wrap) {
+  if (_openSwipe && _openSwipe !== wrap) closeSwipe(_openSwipe);
+  const card = wrap.querySelector('.item-card');
+  if (card) card.style.transform = 'translateX(-' + SWIPE_W + 'px)';
+  _openSwipe = wrap;
+  syncFab();
+}
+
+let _sw = null;
+document.addEventListener('pointerdown', e => {
+  if (selectMode) return;
+  const wrap = e.target.closest('.swipe-wrap');
+  if (!wrap || e.target.closest('.swipe-actions')) return;
+  if (_openSwipe && _openSwipe !== wrap) closeSwipe(_openSwipe);
+  _sw = { wrap, card: wrap.querySelector('.item-card'), x: e.clientX, y: e.clientY,
+          base: _openSwipe === wrap ? -SWIPE_W : 0, moved: false, lock: null };
+});
+document.addEventListener('pointermove', e => {
+  if (!_sw) return;
+  const dx = e.clientX - _sw.x, dy = e.clientY - _sw.y;
+  if (_sw.lock === null) {
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    _sw.lock = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    if (_sw.lock === 'x') _sw.wrap.classList.add('dragging');
+  }
+  if (_sw.lock !== 'x') return;
+  _sw.moved = true;
+  const t = Math.max(-SWIPE_W - 20, Math.min(0, _sw.base + dx));
+  _sw.card.style.transform = 'translateX(' + t + 'px)';
+});
+document.addEventListener('pointerup', () => {
+  if (!_sw) return;
+  const s = _sw; _sw = null;
+  s.wrap.classList.remove('dragging');
+  if (s.lock !== 'x') return;
+  const now = parseFloat((s.card.style.transform.match(/-?\d+(\.\d+)?/) || [0])[0]) || 0;
+  // Suppress the card's tap so a swipe never opens the sheet.
+  if (s.moved) { _suppressTap = true; setTimeout(() => { _suppressTap = false; }, 320); }
+  (now < -SWIPE_W / 2) ? openSwipe(s.wrap) : closeSwipe(s.wrap);
+});
+let _suppressTap = false;
+
+function swipeAction(kind, id) {
+  closeSwipe();
+  if (kind === 'edit')    return openSheetById(id);
+  if (kind === 'archive') return archiveById(id);
+  if (kind === 'delete')  return deleteById(id);
+}
+
+async function archiveById(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  if (!confirm('Archive “' + item.name + '”?\n\nIt leaves the list but stays in the database, so it can be brought back.')) return;
+  items = items.filter(i => i.id !== id);
+  renderAll();
+  savePatch(id, { 'Archived': { checkbox: true } }, 'Archived');
+}
+
+// Real delete — Notion moves the page to the workspace trash (recoverable
+// there for 30 days). Used for genuine mistakes, e.g. a duplicate row.
+async function deleteById(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  if (!confirm('Delete “' + item.name + '”?\n\nIt is removed from the list and sent to the Notion trash, where it can be restored for 30 days.')) return;
+  items = items.filter(i => i.id !== id);
+  renderAll();
+  try {
+    const res = await apiFetch('/api/notion', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pageId: id, archived: true }),
+    });
+    if (res.ok) { toast('Deleted'); }
+    else {
+      let msg = '';
+      try { msg = (await res.json()).message || ''; } catch(e) {}
+      lastWriteError = { status: res.status, message: msg, fields: 'delete', when: new Date().toISOString() };
+      toast('Not deleted' + writeErrorSummary(), 'err');
+      loadData();
+    }
+  } catch(e) {
+    if (e.message === 'unauthorized') return;
+    toast('Delete needs a connection — try again in signal', 'warn');
+    loadData();
+  }
+}
+
+// ── Select mode (bulk actions) ────────────────
+let selectMode  = false;
+let selectedIds = new Set();
+
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  selectedIds.clear();
+  closeSwipe();
+  renderAll();
+  updateBulkBar();
+}
+function toggleSelect(id) {
+  selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
+  renderAll();
+  updateBulkBar();
+}
+function selectButton() {
+  return `<button class="select-btn${selectMode ? ' on' : ''}" onclick="toggleSelectMode()">${selectMode ? 'Done' : 'Select'}</button>`;
+}
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  if (!bar) return;
+  bar.classList.toggle('show', selectMode);
+  syncFab();
+  document.getElementById('bulkCount').textContent =
+    selectedIds.size + ' selected';
+  document.getElementById('bulkCopyDay').style.display =
+    (currentTab === 'menu' && selectedIds.size) ? '' : 'none';
+}
+async function bulkArchive() {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  if (!confirm('Archive ' + ids.length + ' item' + (ids.length > 1 ? 's' : '') + '?\n\nThey leave the list but stay in the database.')) return;
+  items = items.filter(i => !selectedIds.has(i.id));
+  selectedIds.clear(); renderAll(); updateBulkBar();
+  for (const id of ids) await savePatch(id, { 'Archived': { checkbox: true } }, null, true);
+  toast('Archived ' + ids.length);
+}
+async function bulkReset() {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  if (!confirm('Reset ' + ids.length + ' item' + (ids.length > 1 ? 's' : '') + ' to Not packed?\n\nPhotos and details are kept.')) return;
+  ids.forEach(id => { const i = items.find(x => x.id === id); if (i) { i.status = 'Not Started'; i.qtyPacked = 0; } });
+  renderAll();
+  for (const id of ids) {
+    await savePatch(id, { 'Status': { select: { name: 'Not Started' } }, 'Qty Packed': { number: 0 } }, null, true);
+  }
+  toast('Reset ' + ids.length);
+}
+async function bulkCopyToDay() {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  const days = knownDays();
+  const target = prompt('Copy ' + ids.length + ' meal' + (ids.length > 1 ? 's' : '') + ' to which day?\n\n' + days.join(' · '), days[0]);
+  if (!target || !days.includes(target)) return;
+  for (const id of ids) {
+    const item = items.find(x => x.id === id);
+    if (!item) continue;
+    const properties = {
+      'Item Name':   { title: [{ text: { content: item.name } }] },
+      'Category':    { select: { name: 'Food' } },
+      'Assigned To': { select: { name: item.assignedTo } },
+      'Status':      { select: { name: 'Not Started' } },
+      'Day':         { select: { name: target } },
+      'Tags':        { multi_select: (item.tags || []).map(t => ({ name: t })) },
+      'Prep':        { multi_select: (item.prep || []).map(p => ({ name: p })) },
+    };
+    if (item.meal)     properties['Meal']     = { select: { name: item.meal } };
+    if (item.contents) properties['Contents'] = { rich_text: [{ text: { content: item.contents } }] };
+    try { await createItem(properties); } catch(e) { toast('Copy failed — check connection', 'err'); return; }
+  }
+  selectedIds.clear();
+  toast('Copied to ' + target);
+  await loadData();
+  updateBulkBar();
+}
+
 // ── Bottom sheet ──────────────────────────────
 function openSheetById(id) {
+  if (_suppressTap) return;          // finished a swipe — don't also open the sheet
+  if (_openSwipe) { closeSwipe(); return; }
   const item = items.find(i=>i.id===id);
   if (!item) return;
   editingId = id;

@@ -28,17 +28,22 @@ module.exports = async function handler(req, res) {
     'Content-Type': 'application/json',
   };
 
-  // PATCH — update a page's properties
+  // PATCH — update a page's properties, and/or move it to the Notion trash.
+  // `archived: true` is Notion's delete: the row leaves the database but stays
+  // recoverable from the workspace trash for 30 days.
   if (req.method === 'PATCH') {
-    const { pageId, properties } = req.body || {};
-    if (!pageId || !properties) {
-      return res.status(400).json({ error: 'pageId and properties required' });
+    const { pageId, properties, archived } = req.body || {};
+    if (!pageId || (!properties && typeof archived !== 'boolean')) {
+      return res.status(400).json({ error: 'pageId and properties (or archived) required' });
     }
     try {
+      const body = {};
+      if (properties) body.properties = properties;
+      if (typeof archived === 'boolean') body.archived = archived;
       const r = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
         method: 'PATCH',
         headers: notionHeaders,
-        body: JSON.stringify({ properties }),
+        body: JSON.stringify(body),
       });
       return res.status(r.status).json(await r.json());
     } catch (e) {
