@@ -3,7 +3,7 @@
 **The single source of truth for this project.** One roadmap, not one per session.
 Everything else is an appendix and refers back to this file.
 
-**Updated:** 3 August 2026 · build `756aa91` · session S03
+**Updated:** 3 August 2026 · build `c44fd5e` · session S03
 
 - The status board Artifact is a **rendering of this file**, not a separate list.
 - Superseded chat widgets are dead the moment this file changes; ignore them.
@@ -15,11 +15,9 @@ Everything else is an appendix and refers back to this file.
 
 ## 1 · Waiting on Mat's answer
 
-| # | Decision | Claude's recommendation |
-|---|---|---|
-| Q1 | Swipe right-to-left reveals **Edit** and **Archive** | Approved already. Confirming one point: **Archive, not Delete** — nothing in this app hard-deletes, so a mistake stays recoverable. Say otherwise if a true Delete is wanted. |
-| Q2 | Bulk actions via a **Select button**, not a left-to-right swipe | A swipe is invisible until you know it exists and fights the iPhone back-gesture. A Select button is discoverable and cannot fire by accident. Would add **Copy to day** at the same time. |
-| Q3 | Repo tidy — `IMPORT_PLAN.md`, `open-app.html` | Commit `IMPORT_PLAN.md` (record of the inventory import); delete `open-app.html` (launcher shim, made redundant by home-screen icons). |
+*Nothing outstanding.* All three questions were decided on 3 Aug and built — see section 5.
+
+**Q1 was decided against Claude's recommendation, correctly.** Claude argued for archive-only. Mat's reasoning stands: an accidental addition must be removable without trawling through Notion, the swipe is the only sensible place for delete, the girls know what they are doing, and reset covers the end of camp. Claude's objection was also weaker than stated — Notion's delete moves the page to the workspace trash, recoverable for 30 days, so it is not destruction. **Do not re-litigate this.**
 
 ## 2 · Needs a proper conversation
 
@@ -36,17 +34,23 @@ Mat flagged the commercial/multi-user question. Chain to root:
 **Root:** not a "more days" problem. It is whether this stays a family tool or becomes a product — two different applications, and deciding late means a rebuild.
 **Recommendation:** finish State Rally on the family version, then hold this conversation with the sign-in project as its first step.
 
-**K2 — The sign-in project (Google).** Worth doing either way; it is what makes a lockout impossible rather than recoverable. Two decisions from Mat, ~15 minutes in Google Cloud and Vercel, then Claude writes the code.
+**Status (3 Aug):** Mat — *"Discuss following this activity."* Parked until after State Rally.
 
-## 3 · Observations from the data (not jobs)
+**K2 — The sign-in project (Google).** **On hold at Mat's direction (3 Aug).** Worth doing either way; it is what makes a lockout impossible rather than recoverable. Two decisions from Mat, ~15 minutes in Google Cloud and Vercel, then Claude writes the code. Do not start it unprompted.
 
-| Item | Detail | Suggested |
-|---|---|---|
-| Stray `"Friday"` row | A Food row on Day 1 as Dinner. Also why "Friday" appears as an ingredient chip — the chips are built from Food rows. | Archive it. One tap in the app, or Claude can via the Notion connector. |
-| Three compasses | "Compass" (Shared/Gear), "Ava compass" (Ava/Safety), "Mia's compass" (Mia/Safety). | Probably deliberate. Making the categories agree would let them filter together. |
-| Two tents | Oztrail Genesis II 3V at 3800g (Confirmed) and a 2-person dome at 2150g (Not started). | Archive whichever is not going, so shared gear stays honest. |
-| Weights nearly all blank | Only the two tents carry a weight; the app therefore shows ~0.0 kg per child. | Weigh the heavy things only — pack, bag, mat, jacket, boots. |
-| Empty `Tags 1` field | Duplicate of `Tags`, unused by the app. | Delete in Notion when convenient. |
+## 3 · Observations from the data — closed by Mat, 3 Aug
+
+All dismissed with reasons. Recorded so they are not raised again.
+
+| Item | Mat's ruling |
+|---|---|
+| Stray `"Friday"` row | **Not a concern.** They eat dinner before arrival; family takeaway covers it. |
+| Three compasses | **Use the delete button.** This was the case that justified Delete. |
+| Two tents | **Not an issue.** The girls choose based on real conditions on the day. |
+| Weights nearly all blank | **N/A for now.** |
+| Empty `Tags 1` field | Explanation was too thin — see below. |
+
+**What `Tags 1` actually is.** When the `Tags` column was built in S02, Notion also created a second column called `Tags 1` carrying the same five options (SR · JAM · ALL · 1Oak · Patrol). It is empty on every row and the app never reads or writes it — the code only knows `Tags`. It is a leftover, not a backup and not in use. The only effect is an extra empty column in the Notion table view. Deleting it changes nothing in the app; leaving it changes nothing either. Purely cosmetic, zero risk both ways.
 
 ## 4 · Open, not urgent
 
@@ -57,6 +61,14 @@ Mat flagged the commercial/multi-user question. Chain to root:
 
 ## 5 · Built and live
 
+**3 Aug — swipe actions, select mode, repo tidy (`c44fd5e`)**
+- **Swipe a row right-to-left** to reveal **Edit · Archive · Delete**. Archive keeps the row in the database, hidden from the app. Delete sends it to the Notion trash, recoverable there for 30 days. Both confirm first. A swipe never opens the item sheet; tapping an open row closes it.
+- **Select mode** — a visible *Select* button on Packing, Menu and Gear. Tick rows, then **Reset**, **Archive**, or **Copy to day** (Menu only). Deliberately a button, not a hidden left-to-right gesture.
+- The **+ button hides** while a row is open or while selecting, so it can no longer cover the Delete action.
+- `api/notion.js` PATCH now accepts an `archived` flag, which is how delete reaches Notion.
+- Repo tidy: `IMPORT_PLAN.md` committed, `open-app.html` removed. Both revertible from git history.
+
+**Earlier**
 - Notion property mismatch fixed — the field is `Meal Verdict`, the app said `Verdict`, so every Food save was rejected. Rating a meal would still have failed.
 - **Schema guard** — all 17 property names are checked against Notion on load; a rename can no longer fail silently.
 - Saves send **only changed fields**; a refused save names the property Notion rejected and re-syncs the screen.
