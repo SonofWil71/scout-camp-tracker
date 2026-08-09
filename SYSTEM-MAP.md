@@ -7,10 +7,32 @@
 
 ## Mission block
 
-> ⚠️ **DRAFT — Mat to correct.** This was reconstructed from the record, not captured at build time. One line of correction from the owner makes it canon.
+**Confirmed against Mat's own words, S03 (1–9 Aug 2026).** Where his language settles a question, it is quoted verbatim below and governs — do not paraphrase it into drift.
 
 - **Mission:** Let Mia and Ava pack and prepare for a Scout camp themselves, from their own device, and leave a record of what they took.
 - **What "done" looks like:** Both girls pack unaided from their own iPad — no parent reading a list aloud. Before leaving home signal, a per-child packing record can be printed. At camp, with no signal, the app still works and nothing they tap is lost.
+
+### The owner's expectations — verbatim
+
+> *"You remain on keeping the app running as expected add detailed across our 3 session chats to get to this point. I expect consistency and reliability."*
+
+> *"Don't be concerned with how tasks are tracking. As the parent that is my role."*
+
+> *"Don't be concerned with what is or isn't completed, as sorting was the requirement over the weekend and now the collation will continue… As to one child further than another, that's their perception and not the parental fact. It was also their first real use of the app so there was some updating and familiarisation."*
+
+**What these settle:** the app is the deliverable. Packing progress, who has ticked what, and how far one child is ahead of another are **not** the app's business and not Claude's to report on or infer from. Reading a problem into the girls' data is out of scope.
+
+> *"So you making the changes, but not reading and checking your work. Or you doing the changes and not waiting to see if errors arise."*
+
+**What this settles:** a change is not finished when the code is written. Run it, exercise the actual path, observe the result. Network-stubbed tests are not proof — that gap is exactly what let the `Meal Verdict` fault reach a live device.
+
+> *"Why are we drifting between various document/artefacts? I hope you're not creating multiple independent file plans/lists!"*
+
+**What this settles:** one roadmap for the project, updated in place. `ROADMAP.md` is it. Never open a competing list, and never let the rendered board and the file diverge.
+
+> *"There is a reason why I wanted the Gmail option from the begining. In future understand this."*
+
+**What this settles:** OAuth by default for Mat's apps. The shared passphrase was the wrong call and produced two real lockouts, one of them shutting a child out of the app entirely.
 - **WWWWWH**
   - **Who** — Mia (14) and Ava (12); Mat as owner/admin.
   - **What** — a gear, food and packing tracker backed by a Notion database.

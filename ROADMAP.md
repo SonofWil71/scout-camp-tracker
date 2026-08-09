@@ -83,6 +83,35 @@ All dismissed with reasons. Recorded so they are not raised again.
 
 ---
 
+## The owner's rulings — verbatim, and what they settle
+
+Mat's own words. Where these appear, **his meaning governs.** Do not paraphrase them into something softer, and do not re-open them.
+
+**On Delete (3 Aug), overruling Claude's archive-only recommendation:**
+> *"Once [One] of the swipe directions has to be a delete and not make someone trawl through notion or another system to delete because of accidental addition.. The swipe in that place is the only place to delete. The kids know what they are doing. At the end of the camp we have the reset function. We can change the camp and item is required at. Archiving is there for later resurrection if required. This is also the first use, so we're compiling and confirming a lot of aspect through physical application and function."*
+
+Settled: Delete lives in the swipe. Archive is for later resurrection; Delete is for genuine mistakes. **Do not re-litigate.**
+
+**On scope (3 Aug):**
+> *"Don't be concerned with how tasks are tracking. As the parent that is my role. You remain on keeping the app running as expected add detailed across our 3 session chats to get to this point. I expect consistency and reliability."*
+
+Settled: the app is Claude's job. Packing progress is Mat's. Do not infer problems from the girls' data or report on their progress.
+
+**On the multi-user / commercial question (1 Aug):**
+> *"Problem is we need further discussion and forseeability around app function and rolling to other users - commercial application."*
+
+Settled: this is a conversation, not a build item. Parked until after State Rally, at Mat's direction: *"Discuss following this activity."*
+
+**On working method (1 Aug):**
+> *"So you making the changes, but not reading and checking your work. Or you doing the changes and not waiting to see if errors arise."*
+
+Settled: verify in the running app before claiming done.
+
+**On documents (3 Aug):**
+> *"Why are we drifting between various document/artefacts? I hope you're not creating multiple independent file plans/lists!"*
+
+Settled: this file is the only list. The Artifact renders it and moves in the same turn.
+
 ## Working rules for this project
 
 - **This file is the roadmap.** Update it in place; never start a competing list. The Artifact renders it.
