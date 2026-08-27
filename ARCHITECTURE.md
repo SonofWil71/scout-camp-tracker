@@ -138,8 +138,8 @@ Held in Vercel → Project → Settings → Environment Variables. **Changes onl
 
 ## 8 · The database columns the app depends on
 
-`Item Name` (title) · `Category` · `Assigned To` · `Status` · `Day` · `Meal` · `Weight (g)` · `Qty Needed` · `Qty Packed` · `Notes` · `Archived` · `Photo URL` · `Contents` · `Name Inscribed` · `Verdict` · `Prep` · `Tags`
+`Item Name` (title) · `Category` · `Assigned To` · `Status` · `Day` · `Meal` · `Weight (g)` · `Qty Needed` · `Qty Packed` · `Notes` · `Archived` · `Photo URL` · `Contents` · `Name Inscribed` · `Meal Verdict` · `Prep` · `Tags`
 
 Renaming any of these in Notion **will silently break** the matching feature — the app looks them up by name.
 
-**Tags:** `SR` (State Rally) · `JAM` (Jamborette) · `ALL` · `1Oak` (troop) · `Patrol`. No years, because the events recur annually. Filtering by SR or JAM also includes ALL-tagged items.
+**Tags:** `SR` (State Rally) · `JAM` (Jamborette) · `1Oak` (troop) · `Patrol` · plus any activity tags added later. No years, because the events recur annually. The camp pills are built from the tags present in the data plus a base set (`SR`/`JAM`/`1Oak`/`Patrol`), so a new activity added in Notion needs no code change. `ALL` means "needed at every activity" — an `ALL`-tagged item shows under **every** camp pill, and is not a pill itself.

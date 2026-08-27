@@ -715,7 +715,7 @@ let pendingPhotoId   = null;
 let photoCache       = {};
 let photoCacheLoaded = false;
 let _photoDB         = null;
-const APP_VERSION    = 'v4-s03';
+const APP_VERSION    = 'v5-s05';
 
 // ── Notion property extractor ─────────────────
 function prop(page, name) {
@@ -1135,7 +1135,18 @@ function switchTab(tab) {
 }
 
 // ── Add item ──────────────────────────────────
-const TAG_OPTIONS = ['SR', 'JAM', 'ALL', '1Oak', 'Patrol'];
+// Camp/activity tags come from the data plus this base set, so adding a new
+// activity in Notion's "Tags" options and tagging one row makes it appear
+// everywhere here with no code change — same approach as knownDays().
+const BASE_TAGS = ['SR', 'JAM', '1Oak', 'Patrol'];
+function campTags() {
+  const set = new Set(BASE_TAGS);
+  items.forEach(i => (i.tags || []).forEach(t => { if (t && t !== 'ALL') set.add(t); }));
+  return [...set];
+}
+// Chips for the Add / Edit sheets — the same list plus ALL, the "every activity"
+// marker you assign to an item but which is never a filter pill on its own.
+function tagChipOptions() { return campTags().concat('ALL'); }
 let addTagsSel = new Set();
 let addPrepSel = new Set();
 let addIngrSel = new Set();
@@ -1208,7 +1219,7 @@ function closeAddSheet(force) {
   document.getElementById('addSheet').classList.remove('open');
 }
 function renderAddTags() {
-  document.getElementById('addTags').innerHTML = TAG_OPTIONS
+  document.getElementById('addTags').innerHTML = tagChipOptions()
     .map(t => `<div class="tag-chip${addTagsSel.has(t) ? ' on' : ''}" onclick="toggleAddTag('${t}')">${t}</div>`)
     .join('');
 }
@@ -1589,15 +1600,15 @@ ${pool.length ? pool.map(itemCard).join('') : emptyState('⛺','No shared gear',
 }
 
 // ── Tag filter ────────────────────────────────
-const TAG_FILTERS = ['SR', 'JAM', '1Oak', 'Patrol', 'Everything'];
+// An item shows under a camp pill if it carries that camp's tag OR the ALL tag
+// (ALL = "needed at every activity" — toiletries, first aid, basic clothing).
 function matchTag(item) {
   if (activeTag === 'Everything') return true;
   const t = item.tags || [];
-  if (activeTag === 'SR' || activeTag === 'JAM') return t.includes(activeTag) || t.includes('ALL');
-  return t.includes(activeTag);
+  return t.includes(activeTag) || t.includes('ALL');
 }
 function tagFilterRow() {
-  return `<div class="filter-row"><span class="filter-label">Camp</span>${TAG_FILTERS
+  return `<div class="filter-row"><span class="filter-label">Camp</span>${campTags().concat('Everything')
     .map(t => `<div class="pill tag${activeTag===t?' active':''}" onclick="setTag('${t}')">${t}</div>`)
     .join('')}</div>`;
 }
@@ -1904,7 +1915,7 @@ function refreshSheetFoodFields() {
 let sheetTagsSel = new Set();
 let sheetPrepSel = new Set();
 function renderSheetTags() {
-  document.getElementById('sheetTags').innerHTML = TAG_OPTIONS
+  document.getElementById('sheetTags').innerHTML = tagChipOptions()
     .map(t => `<div class="tag-chip${sheetTagsSel.has(t) ? ' on' : ''}" onclick="toggleSheetTag('${t}')">${t}</div>`)
     .join('');
 }

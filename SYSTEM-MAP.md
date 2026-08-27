@@ -80,7 +80,7 @@ Plain language: *At-a-glance packed %, per-child progress, alerts, the printable
 
 | Object | Data flow | Intended behaviour |
 |---|---|---|
-| Camp tag filter pills | local + `localStorage.f_tag` | Filters every screen. `SR` and `JAM` also include `ALL`-tagged items; `Everything` bypasses filtering. |
+| Camp tag filter pills | local + `localStorage.f_tag` | Filters every screen. Every camp pill also includes `ALL`-tagged items (basics needed at any activity); `Everything` bypasses filtering. Pills are built from the tags in the data plus a base set, so a new activity added in Notion appears with no code change. |
 | Four stat cards | read-only | Overall %, packed count, missing count, critical-unpacked count — all within the active camp tag. |
 | Person cards (Mia / Ava / Shared) | read-only + navigation | Show count, weight and % packed. **Tapping opens that person's Packing list.** |
 | Packing record buttons | read-only → browser print | Builds a print-only DOM and calls `window.print()`. Prints **packed and confirmed items only**, plus a Missing section as a safety flag. |
@@ -130,7 +130,7 @@ Plain language: *Change anything about an item, manage its photo, or archive it.
 | Object | Data flow | Intended behaviour |
 |---|---|---|
 | Item name · Notes · Contents | → Notion (PATCH) | **Editable in-app** — previously read-only, which forced a trip to Notion to fix a typo. |
-| Status · Qty packed · Verdict | → Notion (PATCH) | Verdict shows for Food items only. |
+| Status · Qty packed · Meal Verdict | → Notion (PATCH) | Meal Verdict shows for Food items only. |
 | Duplicate meal to another day | → Notion (POST) | Food items only. |
 | Photo: add / change / delete | → IndexedDB + Cloudinary + Notion | Delete confirms first. |
 | Save | → Notion, via the write queue | Saves everything above in one PATCH. |
